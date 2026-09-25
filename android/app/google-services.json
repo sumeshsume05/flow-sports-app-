@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "590945144660",
+    "project_id": "flow-sports-2026",
+    "storage_bucket": "flow-sports-2026.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:590945144660:android:b8ca54c6e8dd5e4e9c82c1",
+        "android_client_info": {
+          "package_name": "com.flowglobal.flow_sports_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCPHbFZcYHlZ8fjBCN1dxrmlbmqgG2MpJo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
