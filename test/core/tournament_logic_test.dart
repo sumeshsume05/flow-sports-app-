@@ -725,6 +725,59 @@ void main() {
       expect(ko3Update.teamA.name, 'Seed2'); // loser of KO1 -> KO3 teamA slot
       expect(finalUpdate.teamA.name, 'Seed1'); // winner of KO1 -> Final teamA slot
     });
+
+    test(
+        'reported bug: a tied knockout result throws instead of silently advancing team B', () {
+      final matches = generateKnockoutMatches(
+        top4Seeds: seeds(),
+        sport: 'badminton',
+        category: 'boys',
+        season: '2026',
+      ).map((m) => Match(
+            id: m.matchCode,
+            sport: m.sport,
+            category: m.category,
+            season: m.season,
+            stage: m.stage,
+            matchNumber: m.matchNumber,
+            label: m.label,
+            matchCode: m.matchCode,
+            teamA: m.teamA,
+            teamB: m.teamB,
+            teamASource: m.teamASource,
+            teamBSource: m.teamBSource,
+            notifyTopic: m.notifyTopic,
+          )).toList();
+
+      final ko2 = matches.firstWhere((m) => m.matchCode == 'KO2');
+      // Exact shape of the reported scenario: an equal score, which
+      // Match.computeResult treats as MatchResult.tie.
+      final tiedKo2 = Match(
+        id: ko2.id,
+        sport: ko2.sport,
+        category: ko2.category,
+        season: ko2.season,
+        stage: ko2.stage,
+        matchNumber: ko2.matchNumber,
+        label: ko2.label,
+        matchCode: ko2.matchCode,
+        teamA: ko2.teamA,
+        teamB: ko2.teamB,
+        scoreA: 21,
+        scoreB: 21,
+        result: Match.computeResult(21, 21),
+        status: MatchStatus.completed,
+        notifyTopic: ko2.notifyTopic,
+      );
+
+      expect(
+        () => resolveDependentSlots(
+          completed: tiedKo2,
+          otherKnockoutMatches: matches.where((m) => m.matchCode != 'KO2').toList(),
+        ),
+        throwsStateError,
+      );
+    });
   });
 
   group('computePodium', () {

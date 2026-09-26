@@ -107,11 +107,24 @@ List<Match> generateKnockoutMatches({
 /// resolve to a winner/loser. Caller is expected to write [completed] and the
 /// returned list in a single Firestore batch so two admins editing at once
 /// can't race into a partial update.
+///
+/// Reported bug: [completed.result] being [MatchResult.tie] used to fall
+/// through a `== MatchResult.teamA ? teamA : teamB` ternary as if it meant
+/// "not team A, so team B" — silently advancing team B on a tied score
+/// instead of refusing to resolve anything. The caller (admin's score-entry
+/// screen) is expected to reject a tied result for a knockout match before
+/// it ever reaches here — badminton games can't legitimately finish level —
+/// but this throws instead of guessing if one somehow does, since a wrong
+/// silent guess corrupts the bracket for every later round.
 List<Match> resolveDependentSlots({
   required Match completed,
   required List<Match> otherKnockoutMatches,
 }) {
   if (completed.result == null) return const [];
+  if (completed.result == MatchResult.tie) {
+    throw StateError(
+        'A knockout match cannot resolve dependent slots on a tied result (${completed.matchCode}).');
+  }
 
   final winner = completed.result == MatchResult.teamA ? completed.teamA : completed.teamB;
   final loser = completed.result == MatchResult.teamA ? completed.teamB : completed.teamA;

@@ -112,6 +112,17 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
       setState(() => _error = 'Enter both scores to save the result.');
       return;
     }
+    // A knockout match must produce a winner to advance the bracket — a
+    // badminton game can't legitimately finish level (it goes to extra
+    // points), so an equal score here means a mis-entered score, not a real
+    // tie. Reported bug: saving one anyway used to silently (and wrongly)
+    // advance team B, since nothing caught it before it reached the
+    // dependent-slot resolver.
+    if (match.stage == MatchStage.knockout && scoreA == scoreB) {
+      setState(() => _error =
+          "Knockout matches can't end level — a badminton game goes to extra points until there's a winner. Check the score.");
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
