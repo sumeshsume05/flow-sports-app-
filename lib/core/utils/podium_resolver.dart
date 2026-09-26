@@ -15,7 +15,11 @@ class Podium {
 ///   1st = KOF winner, 2nd = KOF loser,
 ///   Semifinalists = KO3 loser + KO2 loser (the two teams who never reached
 ///   the Final).
-/// Returns null until KOF has a result.
+/// Returns null until KOF, KO3 and KO2 all have a genuine (non-tied) result
+/// — same reasoning as resolveDependentSlots in bracket_resolver.dart: a
+/// tied score can't legitimately happen in a completed badminton game, so
+/// treating one as "not team A, so team B must have won" would silently
+/// show the wrong podium instead of the honest "not decided yet" state.
 Podium? computePodium(List<Match> knockoutMatches) {
   Match? byCode(String code) {
     for (final m in knockoutMatches) {
@@ -27,7 +31,8 @@ Podium? computePodium(List<Match> knockoutMatches) {
   final koF = byCode('KOF');
   final ko3 = byCode('KO3');
   final ko2 = byCode('KO2');
-  if (koF == null || koF.result == null || ko3 == null || ko3.result == null || ko2 == null || ko2.result == null) {
+  bool decided(Match? m) => m != null && m.result != null && m.result != MatchResult.tie;
+  if (!decided(koF) || !decided(ko3) || !decided(ko2)) {
     return null;
   }
 
@@ -35,8 +40,8 @@ Podium? computePodium(List<Match> knockoutMatches) {
   TeamRef loserOf(Match m) => m.result == MatchResult.teamA ? m.teamB : m.teamA;
 
   return Podium(
-    champion: winnerOf(koF),
+    champion: winnerOf(koF!),
     runnerUp: loserOf(koF),
-    semifinalists: [loserOf(ko3), loserOf(ko2)],
+    semifinalists: [loserOf(ko3!), loserOf(ko2!)],
   );
 }

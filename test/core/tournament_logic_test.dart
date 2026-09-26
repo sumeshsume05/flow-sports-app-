@@ -823,6 +823,21 @@ void main() {
       expect(podium.runnerUp.teamId, 'Seed3');
       expect(podium.semifinalists.map((t) => t.teamId).toSet(), {'Seed2', 'Seed4'});
     });
+
+    test(
+        'reported-bug-adjacent: a tied KO2/KO3 result is treated as undecided, '
+        'not silently resolved to team B', () {
+      // KO2 tied (a badminton game can't legitimately finish level — same
+      // invalid-data shape as the knockout tie-guard bug) — must not be
+      // treated as "Seed4 won" just because it isn't MatchResult.teamA.
+      final matches = [
+        ko('KO1', 'Seed1', 'Seed2', MatchResult.teamA),
+        ko('KO2', 'Seed3', 'Seed4', MatchResult.tie),
+        ko('KO3', 'Seed2', 'Seed4', MatchResult.teamB),
+        ko('KOF', 'Seed1', 'Seed4', MatchResult.teamA),
+      ];
+      expect(computePodium(matches), isNull);
+    });
   });
 
   group('groupMatchesForDisplay', () {

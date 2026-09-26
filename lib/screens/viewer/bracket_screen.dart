@@ -24,6 +24,9 @@ class BracketScreen extends StatelessWidget {
       body: StreamBuilder<List<Match>>(
         stream: _matchesStream,
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Something went wrong: ${snapshot.error}'));
+          }
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }

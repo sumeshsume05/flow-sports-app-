@@ -74,18 +74,26 @@ GoRouter buildRouter(AuthState authState) {
               season: season(context),
             ),
           ),
-          GoRoute(
-            path: '/bracket',
-            builder: (context, state) => BracketScreen(
-              category: state.uri.queryParameters['category'] ?? '',
-              season: season(context),
-            ),
-          ),
         ],
       ),
       GoRoute(
         path: '/chat',
         builder: (context, state) => ChatScreen(season: season(context)),
+      ),
+      // Kept outside the shell too (like /chat), but for a different reason:
+      // this is the one viewer screen an admin screen (/admin/bracket/generate,
+      // itself outside the shell) also pushes straight into. Pushing from
+      // outside a ShellRoute into a route inside it is a known go_router bug
+      // — '!keyReservation.contains(key)' — that reproduces on a second such
+      // push (https://github.com/flutter/flutter/issues/156585). Viewers
+      // still reach it the same way as before via MatchListScreen's Bracket
+      // button, just without the floating chat button on this one screen.
+      GoRoute(
+        path: '/bracket',
+        builder: (context, state) => BracketScreen(
+          category: state.uri.queryParameters['category'] ?? '',
+          season: season(context),
+        ),
       ),
       GoRoute(path: '/admin/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/admin', builder: (context, state) => const AdminDashboardScreen()),
