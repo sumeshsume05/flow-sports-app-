@@ -12,12 +12,14 @@ import '../screens/admin/generate_bracket_screen.dart';
 import '../screens/admin/generate_schedule_screen.dart';
 import '../screens/admin/login_screen.dart';
 import '../screens/viewer/bracket_screen.dart';
+import '../screens/viewer/chat_screen.dart';
 import '../screens/viewer/home_screen.dart';
 import '../screens/viewer/match_detail_screen.dart';
 import '../screens/viewer/match_list_screen.dart';
 import '../screens/viewer/standings_screen.dart';
 import '../state/auth_state.dart';
 import '../state/season_state.dart';
+import '../widgets/chat_fab.dart';
 
 GoRouter buildRouter(AuthState authState) {
   // Every screen that reads/writes teams or matches needs to know which
@@ -42,32 +44,46 @@ GoRouter buildRouter(AuthState authState) {
       return null;
     },
     routes: [
-      GoRoute(path: '/', builder: (context, state) => HomeScreen(season: season(context))),
-      GoRoute(
-        path: '/matches',
-        builder: (context, state) => MatchListScreen(
-          category: state.uri.queryParameters['category'] ?? '',
-          season: season(context),
+      // Viewer screens share a floating chat entry point (with an unread
+      // badge) via this shell, so it appears everywhere a viewer browses
+      // without any individual screen needing to know about it. `/chat`
+      // itself and all `/admin/*` routes stay outside the shell — chat
+      // shouldn't float over itself, and admin screens already have their
+      // own FloatingActionButtons that a second FAB would collide with.
+      ShellRoute(
+        builder: (context, state, child) => Stack(
+          children: [child, const ChatFab()],
         ),
+        routes: [
+          GoRoute(path: '/', builder: (context, state) => HomeScreen(season: season(context))),
+          GoRoute(
+            path: '/matches',
+            builder: (context, state) => MatchListScreen(
+              category: state.uri.queryParameters['category'] ?? '',
+              season: season(context),
+            ),
+          ),
+          GoRoute(
+            path: '/matches/:id',
+            builder: (context, state) => MatchDetailScreen(matchId: state.pathParameters['id']!),
+          ),
+          GoRoute(
+            path: '/standings',
+            builder: (context, state) => StandingsScreen(
+              category: state.uri.queryParameters['category'] ?? '',
+              season: season(context),
+            ),
+          ),
+          GoRoute(
+            path: '/bracket',
+            builder: (context, state) => BracketScreen(
+              category: state.uri.queryParameters['category'] ?? '',
+              season: season(context),
+            ),
+          ),
+        ],
       ),
-      GoRoute(
-        path: '/matches/:id',
-        builder: (context, state) => MatchDetailScreen(matchId: state.pathParameters['id']!),
-      ),
-      GoRoute(
-        path: '/standings',
-        builder: (context, state) => StandingsScreen(
-          category: state.uri.queryParameters['category'] ?? '',
-          season: season(context),
-        ),
-      ),
-      GoRoute(
-        path: '/bracket',
-        builder: (context, state) => BracketScreen(
-          category: state.uri.queryParameters['category'] ?? '',
-          season: season(context),
-        ),
-      ),
+      GoRoute(path: '/chat', builder: (context, state) => const ChatScreen()),
       GoRoute(path: '/admin/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/admin', builder: (context, state) => const AdminDashboardScreen()),
       GoRoute(path: '/admin/seasons', builder: (context, state) => const AdminSeasonsScreen()),

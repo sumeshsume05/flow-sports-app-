@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
+import '../models/chat_message.dart';
 import '../models/match.dart';
 import '../models/season.dart';
 import '../models/team.dart';
@@ -286,6 +287,28 @@ class FirestoreService {
       await _db.collection(configCollection).doc('activeSeason').set({'seasonId': seasonId});
     } catch (e) {
       throw FirestoreWriteException('Could not switch season.', e);
+    }
+  }
+
+  // --- Chat ---
+
+  /// Bounded window of the most recent messages, newest first — kept small
+  /// via [chatWindowSize] so this live listener stays cheap regardless of
+  /// how much the collection grows over the event (see rules/model docs).
+  Stream<List<ChatMessage>> watchRecentChatMessages({int limit = chatWindowSize}) {
+    return _db
+        .collection(chatMessagesCollection)
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snap) => snap.docs.map(ChatMessage.fromFirestore).toList());
+  }
+
+  Future<void> sendChatMessage(ChatMessage message) async {
+    try {
+      await _db.collection(chatMessagesCollection).add(message.toFirestore());
+    } catch (e) {
+      throw FirestoreWriteException('Could not send message.', e);
     }
   }
 }

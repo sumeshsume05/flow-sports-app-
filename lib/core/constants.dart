@@ -28,6 +28,18 @@ const matchesCollection = 'matches';
 const adminsCollection = 'admins';
 const configCollection = 'config';
 const seasonsCollection = 'seasons';
+const chatMessagesCollection = 'chatMessages';
+
+/// Bounds the live chat query so reads stay cheap regardless of how many
+/// messages accumulate over the event.
+const chatWindowSize = 50;
+const chatMessageMaxLength = 280;
+const chatDisplayNameMaxLength = 24;
+
+/// Enforced on the trimmed name — a name that's just spaces padded out to
+/// this length (or beyond) still doesn't count, since trimming collapses it
+/// away first.
+const chatDisplayNameMinLength = 4;
 
 /// Reaction keys viewers can tap on a match — single source of truth for
 /// both the Firestore field names (`match.reactionCounts[key]`) and the

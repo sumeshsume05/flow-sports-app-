@@ -51,5 +51,22 @@ service cloud.firestore {
       allow create, update: if isAdmin();
       allow delete: if false; // seasons are never deleted, to protect tournament history
     }
+
+    match /chatMessages/{messageId} {
+      allow read: if true;
+      // No auth required to post — a locally chosen display name stands in
+      // for identity. request.time forces a real server timestamp (via
+      // FieldValue.serverTimestamp()), blocking a spoofed/backdated one.
+      allow create: if request.resource.data.text is string &&
+        request.resource.data.text.size() > 0 &&
+        request.resource.data.text.size() <= 280 &&
+        request.resource.data.authorName is string &&
+        request.resource.data.authorName.size() >= 4 &&
+        request.resource.data.authorName.size() <= 24 &&
+        request.resource.data.authorDeviceId is string &&
+        request.resource.data.createdAt == request.time;
+      // Messages are immutable to viewers once posted; admin can moderate.
+      allow update, delete: if isAdmin();
+    }
   }
 }
