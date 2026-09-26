@@ -108,6 +108,10 @@ class Match {
   final String? lastCommentaryText;
   final DateTime? lastCommentaryAt;
 
+  /// Viewer "who wins" prediction tap counts, keyed by [PredictionChoice].
+  /// Absent on docs written before this feature, hence the empty-map default.
+  final Map<String, int> predictionCounts;
+
   /// Only set for `stage == tiebreaker` matches: which tie-breaker round this
   /// belongs to (1, 2, ...). A tie-breaker can itself end in another tie
   /// among some or all of its teams, needing a fresh round among just the
@@ -140,6 +144,7 @@ class Match {
     this.reactionCounts = const {},
     this.lastCommentaryText,
     this.lastCommentaryAt,
+    this.predictionCounts = const {},
     this.tiebreakerRound,
   });
 
@@ -172,6 +177,9 @@ class Match {
           const {},
       lastCommentaryText: data['lastCommentaryText'] as String?,
       lastCommentaryAt: (data['lastCommentaryAt'] as Timestamp?)?.toDate(),
+      predictionCounts: (data['predictionCounts'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(k, v as int)) ??
+          const {},
       tiebreakerRound: data['tiebreakerRound'] as int?,
     );
   }

@@ -245,6 +245,24 @@ class FirestoreService {
     }
   }
 
+  /// Casts (or switches) a viewer's "who wins" prediction for [matchId]. If
+  /// [previousChoice] is given (the device already had a pick), that count
+  /// is decremented in the same write that increments [choice] — an atomic
+  /// switch rather than two separate round trips. Same trust level as
+  /// reactions: cheap enough for no admin auth, rides on the existing match
+  /// doc stream, no extra reads.
+  Future<void> castPrediction(String matchId, {required String choice, String? previousChoice}) async {
+    try {
+      final updates = {'predictionCounts.$choice': FieldValue.increment(1)};
+      if (previousChoice != null && previousChoice != choice) {
+        updates['predictionCounts.$previousChoice'] = FieldValue.increment(-1);
+      }
+      await _db.collection(matchesCollection).doc(matchId).update(updates);
+    } catch (e) {
+      throw FirestoreWriteException('Could not save your prediction.', e);
+    }
+  }
+
   Future<void> setMatchStatus(String matchId, MatchStatus status) async {
     try {
       await _db.collection(matchesCollection).doc(matchId).update({'status': status.name});

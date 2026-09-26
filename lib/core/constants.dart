@@ -62,6 +62,15 @@ String reactionEmojiGlyph(String key) => switch (key) {
       _ => '❔',
     };
 
+/// Keys viewers can pick when predicting a match's winner — single source
+/// of truth for the Firestore field names (`match.predictionCounts[key]`)
+/// and which `TeamRef` on `Match` each one maps to.
+class PredictionChoice {
+  static const teamA = 'teamA';
+  static const teamB = 'teamB';
+  static const all = [teamA, teamB];
+}
+
 /// The season id used to seed the very first `Season` doc on first run, and
 /// to match every pre-existing team/match doc written before seasons existed
 /// (they all carry `season: '2026'` already — using the same string as the

@@ -19,4 +19,14 @@ class LocalPrefsService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(key);
   }
+
+  Future<String?> getString(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(key);
+  }
+
+  Future<void> setString(String key, String value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(key, value);
+  }
 }

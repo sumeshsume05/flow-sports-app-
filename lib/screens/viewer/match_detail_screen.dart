@@ -8,6 +8,7 @@ import '../../core/design/app_spacing.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/commentary_ticker.dart';
+import '../../widgets/prediction_widget.dart';
 import '../../widgets/reaction_bar.dart';
 import '../../widgets/status_badge.dart';
 
@@ -66,6 +67,8 @@ class MatchDetailScreen extends StatelessWidget {
                     ],
                   ),
                 ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0),
+                const SizedBox(height: AppSpacing.md),
+                PredictionWidget(match: match),
                 const SizedBox(height: AppSpacing.md),
                 ReactionBar(matchId: match.id, counts: match.reactionCounts),
                 const SizedBox(height: AppSpacing.md),
