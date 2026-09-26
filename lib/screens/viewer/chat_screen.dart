@@ -13,7 +13,9 @@ import '../../services/local_identity_service.dart';
 import '../../state/auth_state.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  final String season;
+
+  const ChatScreen({super.key, required this.season});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -23,7 +25,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _firestoreService = FirestoreService();
   final _identity = LocalIdentityService();
   final _textController = TextEditingController();
-  late final _messagesStream = _firestoreService.watchRecentChatMessages();
+  late final _messagesStream = _firestoreService.watchRecentChatMessages(season: widget.season);
 
   String? _displayName;
   bool _sending = false;
@@ -100,6 +102,7 @@ class _ChatScreenState extends State<ChatScreen> {
         authorName: _displayName!,
         authorDeviceId: deviceId,
         createdAt: null,
+        season: widget.season,
       ));
       await _identity.recordSentNow();
       _textController.clear();

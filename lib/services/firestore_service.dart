@@ -314,9 +314,10 @@ class FirestoreService {
   /// Bounded window of the most recent messages, newest first — kept small
   /// via [chatWindowSize] so this live listener stays cheap regardless of
   /// how much the collection grows over the event (see rules/model docs).
-  Stream<List<ChatMessage>> watchRecentChatMessages({int limit = chatWindowSize}) {
+  Stream<List<ChatMessage>> watchRecentChatMessages({required String season, int limit = chatWindowSize}) {
     return _db
         .collection(chatMessagesCollection)
+        .where('season', isEqualTo: season)
         .orderBy('createdAt', descending: true)
         .limit(limit)
         .snapshots()

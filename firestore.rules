@@ -87,7 +87,8 @@ service cloud.firestore {
         request.resource.data.authorName.size() >= 4 &&
         request.resource.data.authorName.size() <= 24 &&
         request.resource.data.authorDeviceId is string &&
-        request.resource.data.createdAt == request.time;
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.season is string;
       // Messages are immutable to viewers once posted; admin can moderate.
       allow update, delete: if isAdmin();
     }

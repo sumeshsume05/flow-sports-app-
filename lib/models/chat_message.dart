@@ -6,6 +6,7 @@ class ChatMessage {
   final String authorName;
   final String authorDeviceId;
   final DateTime? createdAt;
+  final String season;
 
   const ChatMessage({
     required this.id,
@@ -13,6 +14,7 @@ class ChatMessage {
     required this.authorName,
     required this.authorDeviceId,
     required this.createdAt,
+    required this.season,
   });
 
   factory ChatMessage.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -23,6 +25,7 @@ class ChatMessage {
       authorName: data['authorName'] as String,
       authorDeviceId: data['authorDeviceId'] as String,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+      season: data['season'] as String? ?? '',
     );
   }
 
@@ -31,5 +34,6 @@ class ChatMessage {
         'authorName': authorName,
         'authorDeviceId': authorDeviceId,
         'createdAt': FieldValue.serverTimestamp(),
+        'season': season,
       };
 }

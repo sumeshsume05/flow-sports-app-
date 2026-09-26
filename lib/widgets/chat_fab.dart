@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../core/design/app_colors.dart';
 import '../core/design/app_radius.dart';
 import '../models/chat_message.dart';
 import '../services/firestore_service.dart';
 import '../services/local_identity_service.dart';
+import '../state/season_state.dart';
 
 /// Floating chat entry point shown on every viewer screen (wired in via a
 /// `ShellRoute` in `app_router.dart`, so no individual screen needs to know
@@ -21,7 +23,6 @@ class ChatFab extends StatefulWidget {
 class _ChatFabState extends State<ChatFab> {
   final _firestoreService = FirestoreService();
   final _identity = LocalIdentityService();
-  late final _messagesStream = _firestoreService.watchRecentChatMessages();
   DateTime? _lastReadAt;
 
   @override
@@ -44,11 +45,18 @@ class _ChatFabState extends State<ChatFab> {
 
   @override
   Widget build(BuildContext context) {
+    // Watched (not read-once) so the badge/stream correctly follow an admin
+    // switching the active season while this persistent overlay stays alive
+    // across navigation — unlike a one-shot pushed screen, this widget isn't
+    // rebuilt fresh per season change otherwise.
+    final season = context.watch<SeasonState>().activeSeasonId ?? '';
+    final messagesStream = _firestoreService.watchRecentChatMessages(season: season);
+
     return Positioned(
       right: 16,
       bottom: 16,
       child: StreamBuilder<List<ChatMessage>>(
-        stream: _messagesStream,
+        stream: messagesStream,
         builder: (context, snapshot) {
           final messages = snapshot.data ?? [];
           final unread = _lastReadAt == null

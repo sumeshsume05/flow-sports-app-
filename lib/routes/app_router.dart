@@ -83,7 +83,10 @@ GoRouter buildRouter(AuthState authState) {
           ),
         ],
       ),
-      GoRoute(path: '/chat', builder: (context, state) => const ChatScreen()),
+      GoRoute(
+        path: '/chat',
+        builder: (context, state) => ChatScreen(season: season(context)),
+      ),
       GoRoute(path: '/admin/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/admin', builder: (context, state) => const AdminDashboardScreen()),
       GoRoute(path: '/admin/seasons', builder: (context, state) => const AdminSeasonsScreen()),
