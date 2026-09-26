@@ -56,7 +56,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
       stage: 'tiebreaker',
     );
     final standings = computeStandings(teams: teams, leagueMatches: leagueMatches);
-    final rawCandidates = _candidatesForTopFour(standings);
+    final rawCandidates = candidatesForTopFour(standings);
     final cluster = decidingTieCluster(rawCandidates);
 
     TieChainResult? chain;
@@ -76,19 +76,6 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
         _chain = chain;
       });
     }
-  }
-
-  /// Everyone who could plausibly claim a top-4 spot: the clear top 4 plus
-  /// anyone else still level with 4th place on both points and points scored
-  /// (points scored already breaks most ties automatically — this only
-  /// widens the list when teams are genuinely dead level on both).
-  List<StandingRow> _candidatesForTopFour(List<StandingRow> standings) {
-    if (standings.length <= 4) return List.of(standings);
-    final cutoff = standings[3];
-    return standings
-        .where((r) => r.points > cutoff.points ||
-            (r.points == cutoff.points && r.pointsScored == cutoff.pointsScored))
-        .toList();
   }
 
   @override

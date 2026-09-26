@@ -218,6 +218,63 @@ void main() {
     });
   });
 
+  group('candidatesForTopFour', () {
+    StandingRow row(String id, int points, int scored) {
+      final r = StandingRow(teamId: id, teamName: id);
+      r.points = points;
+      r.pointsScored = scored;
+      return r;
+    }
+
+    test(
+        'reported bug: 3rd place sharing points with 4th but ahead on points-scored '
+        'is kept, not dropped', () {
+      // Exact shape of the reported scenario: 3rd and 4th both on 5 pts, but
+      // 3rd scored 85 vs 4th's 69 — 3rd clearly outranks 4th already, isn't
+      // tied with anyone, and must not be excluded just for sharing points
+      // with the cutoff row.
+      final standings = [
+        row('Christina', 8, 77),
+        row('Jisha', 7, 73),
+        row('Devi', 5, 85),
+        row('Renosha', 5, 69),
+        row('Elain', 3, 74),
+        row('Rebisha', 2, 75),
+      ];
+      final candidates = candidatesForTopFour(standings);
+      expect(candidates.map((r) => r.teamId).toList(), ['Christina', 'Jisha', 'Devi', 'Renosha']);
+    });
+
+    test('no widening needed: returns exactly the top 4 when unambiguous', () {
+      final standings = [
+        row('A', 8, 90),
+        row('B', 6, 83),
+        row('C', 4, 72),
+        row('D', 2, 60),
+        row('E', 1, 50),
+      ];
+      expect(candidatesForTopFour(standings).map((r) => r.teamId).toList(), ['A', 'B', 'C', 'D']);
+    });
+
+    test('widens past 4 only for a genuine tie (same points AND scored) with the cutoff', () {
+      final standings = [
+        row('A', 8, 90),
+        row('B', 6, 83),
+        row('C', 4, 72),
+        row('D', 4, 72), // cutoff
+        row('E', 4, 72), // genuinely tied with cutoff — pulled in
+        row('F', 3, 60), // not tied — stays out
+      ];
+      final candidates = candidatesForTopFour(standings);
+      expect(candidates.map((r) => r.teamId).toSet(), {'A', 'B', 'C', 'D', 'E'});
+    });
+
+    test('4 or fewer teams total returns them all as-is', () {
+      final standings = [row('A', 8, 90), row('B', 6, 83), row('C', 4, 72)];
+      expect(candidatesForTopFour(standings), standings);
+    });
+  });
+
   group('generateTiebreakerMatches', () {
     test('2 tied teams produce exactly 1 match', () {
       final matches = generateTiebreakerMatches(
@@ -252,6 +309,20 @@ void main() {
       expect(matches.every((m) => m.stage == MatchStage.tiebreaker), isTrue);
       final pairs = matches.map((m) => {m.teamA.teamId, m.teamB.teamId}).toSet();
       expect(pairs.length, 3);
+    });
+
+    test('scales to a full 6-team tie (every pair exactly once, C(6,2)=15 matches)', () {
+      final teams = List.generate(6, (i) => StandingRow(teamId: 't$i', teamName: 'Team $i'));
+      final matches = generateTiebreakerMatches(
+        tiedTeams: teams,
+        sport: 'badminton',
+        category: 'girls',
+        season: '2026',
+        round: 1,
+      );
+      expect(matches.length, 15);
+      final pairs = matches.map((m) => {m.teamA.teamId, m.teamB.teamId}).toSet();
+      expect(pairs.length, 15); // no duplicate or missing pairing
     });
   });
 
@@ -386,6 +457,188 @@ void main() {
 
       expect(result.contestedGroup, isNull);
       expect(result.order.map((r) => r.teamId).toList(), ['A', 'B', 'C']);
+    });
+  });
+
+  group('GenerateBracketScreen candidate resolution (full pipeline)', () {
+    // Mirrors exactly what generate_bracket_screen.dart's _load() does:
+    // candidatesForTopFour -> decidingTieCluster -> (if a cluster exists)
+    // resolveTieChain -> splice the chain's resolved order back into the
+    // candidate list. This group exercises that *composition* end to end,
+    // not just each function alone — the reported bug (3rd place dropped
+    // entirely) only showed up in how pieces combined, not in either piece
+    // in isolation, so per-function tests alone weren't enough to catch it.
+    ({List<StandingRow> candidates, TieChainResult? chain}) resolve(
+      List<StandingRow> standings,
+      List<Match> tiebreakerMatches,
+    ) {
+      final raw = candidatesForTopFour(standings);
+      final cluster = decidingTieCluster(raw);
+      if (cluster == null) return (candidates: raw, chain: null);
+      final chain = resolveTieChain(originalCluster: cluster, allTiebreakerMatches: tiebreakerMatches);
+      final candidates = List<StandingRow>.of(raw);
+      final startIndex = candidates.indexWhere((r) => r.teamId == cluster.first.teamId);
+      for (var k = 0; k < chain.order.length; k++) {
+        candidates[startIndex + k] = chain.order[k];
+      }
+      return (candidates: candidates, chain: chain);
+    }
+
+    StandingRow row(String id, int points, int scored) {
+      final r = StandingRow(teamId: id, teamName: id);
+      r.points = points;
+      r.pointsScored = scored;
+      return r;
+    }
+
+    Match tb(String category, int round, String a, String b, int scoreA, int scoreB, int n) => Match(
+          id: 'tb-$category-$round-$n',
+          sport: 'badminton',
+          category: category,
+          season: '2026',
+          stage: MatchStage.tiebreaker,
+          matchNumber: n,
+          label: 'Tie-Breaker',
+          matchCode: 'TB${round}_$n',
+          teamA: TeamRef(teamId: a, name: a),
+          teamB: TeamRef(teamId: b, name: b),
+          scoreA: scoreA,
+          scoreB: scoreB,
+          result: Match.computeResult(scoreA, scoreB),
+          status: MatchStatus.completed,
+          notifyTopic: 'badminton_$category',
+          tiebreakerRound: round,
+        );
+
+    test('all 6 teams fully tied (same pts, same score): all 6 are contested until played', () {
+      final standings = [
+        row('A', 4, 70),
+        row('B', 4, 70),
+        row('C', 4, 70),
+        row('D', 4, 70),
+        row('E', 4, 70),
+        row('F', 4, 70),
+      ];
+      final result = resolve(standings, []);
+      expect(result.chain, isNotNull);
+      expect(result.chain!.contestedGroup?.map((r) => r.teamId).toSet(),
+          {'A', 'B', 'C', 'D', 'E', 'F'});
+    });
+
+    test('all 6 teams fully tied: a clean round-robin tie-breaker picks the correct top 4', () {
+      final standings = [
+        row('A', 4, 70),
+        row('B', 4, 70),
+        row('C', 4, 70),
+        row('D', 4, 70),
+        row('E', 4, 70),
+        row('F', 4, 70),
+      ];
+      // Strict dominance order A>B>C>D>E>F, so the round-robin resolves
+      // fully in one round with no sub-ties left over.
+      const order = ['A', 'B', 'C', 'D', 'E', 'F'];
+      final matches = <Match>[];
+      var n = 1;
+      for (var i = 0; i < order.length; i++) {
+        for (var j = i + 1; j < order.length; j++) {
+          matches.add(tb('boys', 1, order[i], order[j], 21, 10, n++));
+        }
+      }
+      final result = resolve(standings, matches);
+      expect(result.chain!.contestedGroup, isNull);
+      expect(result.candidates.take(4).map((r) => r.teamId).toList(), ['A', 'B', 'C', 'D']);
+      expect(result.candidates.skip(4).map((r) => r.teamId).toSet(), {'E', 'F'});
+    });
+
+    test('top 3 safely tied + bottom 3 tied for the last spot: only the bottom 3 are contested', () {
+      final standings = [
+        row('A', 6, 83),
+        row('B', 6, 83),
+        row('C', 6, 83),
+        row('D', 4, 72),
+        row('E', 4, 72),
+        row('F', 4, 72),
+      ];
+      final matches = [
+        tb('girls', 1, 'D', 'E', 21, 15, 1),
+        tb('girls', 1, 'D', 'F', 21, 15, 2),
+        tb('girls', 1, 'E', 'F', 21, 15, 3),
+      ]; // D wins both its matches outright
+      final result = resolve(standings, matches);
+      expect(result.chain!.contestedGroup, isNull);
+      // Top 3 keep their given order — they were never part of the
+      // contested cluster — and D wins the tie-breaker outright for 4th.
+      expect(result.candidates.take(4).map((r) => r.teamId).toList(), ['A', 'B', 'C', 'D']);
+      expect(result.candidates.skip(4).map((r) => r.teamId).toSet(), {'E', 'F'});
+    });
+
+    test('mixed: a 2nd/3rd tie needs no tie-breaker, only the 4th/5th tie for the cutoff does', () {
+      final standings = [
+        row('A', 10, 100), // clear 1st
+        row('B', 6, 80), row('C', 6, 80), // tied for 2nd/3rd — both safely qualify regardless
+        row('D', 4, 60), row('E', 4, 60), // tied for the one remaining spot
+        row('F', 1, 40), // clearly out
+      ];
+      final raw = candidatesForTopFour(standings);
+      // The B/C tie never reaches decidingTieCluster — it doesn't share the
+      // cutoff's point value, so it can't affect who qualifies, only seed order.
+      final cluster = decidingTieCluster(raw);
+      expect(cluster!.map((r) => r.teamId).toSet(), {'D', 'E'});
+
+      final matches = [tb('boys', 1, 'D', 'E', 21, 18, 1)]; // D wins
+      final result = resolve(standings, matches);
+      expect(result.chain!.contestedGroup, isNull);
+      expect(result.candidates.take(4).map((r) => r.teamId).toList(), ['A', 'B', 'C', 'D']);
+      // F was never a contender (it doesn't share the cutoff's points/scored),
+      // so candidatesForTopFour correctly leaves it out of the list entirely
+      // — only E, which genuinely contested and lost, shows up as "OUT".
+      expect(result.candidates.length, 5);
+      expect(result.candidates.skip(4).map((r) => r.teamId).toSet(), {'E'});
+    });
+
+    test('exactly 4 teams, all mutually tied: nobody below to threaten them, so no tie-breaker needed', () {
+      final standings = [row('A', 4, 60), row('B', 4, 60), row('C', 4, 60), row('D', 4, 60)];
+      final result = resolve(standings, []);
+      // No 5th team exists to contest a spot — must never be flagged as a
+      // qualification ambiguity, only a (harmless, optional) seeding one.
+      expect(result.chain, isNull);
+      expect(result.candidates.map((r) => r.teamId).toList(), ['A', 'B', 'C', 'D']);
+    });
+
+    test('exactly 5 teams, only 4th and 5th tied', () {
+      final standings = [
+        row('A', 10, 90),
+        row('B', 8, 85),
+        row('C', 6, 80),
+        row('D', 4, 70),
+        row('E', 4, 70),
+      ];
+      final matches = [tb('girls', 1, 'D', 'E', 15, 21, 1)]; // E wins
+      final result = resolve(standings, matches);
+      expect(result.chain!.contestedGroup, isNull);
+      expect(result.candidates.take(4).map((r) => r.teamId).toList(), ['A', 'B', 'C', 'E']);
+      expect(result.candidates.skip(4).map((r) => r.teamId).toSet(), {'D'});
+    });
+
+    test('boys and girls run through identical logic — category never changes the outcome', () {
+      final standings = [
+        row('A', 6, 83),
+        row('B', 6, 83),
+        row('C', 6, 83),
+        row('D', 4, 72),
+        row('E', 4, 72),
+        row('F', 4, 72),
+      ];
+      List<String> seedsFor(String category) {
+        final matches = [
+          tb(category, 1, 'D', 'E', 21, 15, 1),
+          tb(category, 1, 'D', 'F', 21, 15, 2),
+          tb(category, 1, 'E', 'F', 21, 15, 3),
+        ];
+        return resolve(standings, matches).candidates.take(4).map((r) => r.teamId).toList();
+      }
+
+      expect(seedsFor('boys'), seedsFor('girls'));
     });
   });
 

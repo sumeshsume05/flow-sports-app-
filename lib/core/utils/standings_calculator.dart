@@ -84,6 +84,28 @@ bool topFourHasAmbiguousTie(List<StandingRow> standings) {
   return standings.take(4).any((r) => r.tiedWithAnother) || cutoffTied;
 }
 
+/// Everyone who could plausibly claim a top-4 spot: the true top 4 by full
+/// rank (points, then points-scored) plus anyone else still level with
+/// 4th place on *both* points and points-scored — i.e. only a genuine tie
+/// widens the list.
+///
+/// Reported bug this guards against: an earlier version filtered by
+/// `points == cutoff.points` alone before checking points-scored, which
+/// wrongly dropped a 3rd-place team that merely *shared* the cutoff's point
+/// total but had already beaten it outright on points-scored (e.g. 3rd on
+/// 5 pts/85 scored, 4th on 5 pts/69 scored — 3rd clearly qualifies and isn't
+/// tied with anyone, but was being excluded entirely instead of kept ahead
+/// of 4th). Taking the already-correctly-sorted top 4 unconditionally, and
+/// only *adding* rows genuinely tied with the cutoff, avoids that.
+List<StandingRow> candidatesForTopFour(List<StandingRow> standings) {
+  if (standings.length <= 4) return List.of(standings);
+  final cutoff = standings[3];
+  final extras = standings
+      .skip(4)
+      .where((r) => r.points == cutoff.points && r.pointsScored == cutoff.pointsScored);
+  return [...standings.take(4), ...extras];
+}
+
 /// The *only* tie that actually decides who qualifies out of [candidates]
 /// (the widened top-4-or-more list a caller like the Generate Bracket screen
 /// builds once teams are tied at the cutoff): the group of teams tied with
