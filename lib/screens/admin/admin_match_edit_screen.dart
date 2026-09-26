@@ -1,10 +1,13 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
+import '../../core/constants.dart';
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../core/utils/bracket_resolver.dart';
+import '../../models/commentary_entry.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/score_input_field.dart';
@@ -26,8 +29,10 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
   final _scoreBController = TextEditingController();
   final _venueController = TextEditingController();
   final _courtController = TextEditingController();
+  final _commentaryController = TextEditingController();
   bool _initialized = false;
   bool _saving = false;
+  bool _postingCommentary = false;
   String? _error;
 
   @override
@@ -36,6 +41,7 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
     _scoreBController.dispose();
     _venueController.dispose();
     _courtController.dispose();
+    _commentaryController.dispose();
     super.dispose();
   }
 
@@ -76,6 +82,26 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
       if (mounted) setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _postCommentary() async {
+    final text = _commentaryController.text.trim();
+    if (text.isEmpty) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    setState(() => _postingCommentary = true);
+    try {
+      await _firestoreService.postCommentary(
+        widget.matchId,
+        CommentaryEntry(id: '', text: text, createdAt: null, postedByUid: uid),
+      );
+      _commentaryController.clear();
+    } on FirestoreWriteException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _postingCommentary = false);
     }
   }
 
@@ -196,6 +222,41 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
                 ],
               ),
               const SizedBox(height: AppSpacing.lg),
+              Text('Live commentary', style: textTheme.titleSmall),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Post a short live update — viewers see it appear instantly on the match.',
+                style: textTheme.bodySmall,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _commentaryController,
+                      maxLength: commentaryMaxLength,
+                      decoration: const InputDecoration(
+                        hintText: 'e.g. Set 2, 15-10',
+                        isDense: true,
+                      ),
+                      onSubmitted: (_) => _postCommentary(),
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  _postingCommentary
+                      ? const Padding(
+                          padding: EdgeInsets.only(top: 12),
+                          child: SizedBox(
+                              width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                        )
+                      : IconButton.filled(
+                          icon: const Icon(Icons.send),
+                          onPressed: _postCommentary,
+                        ),
+                ],
+              ),
+              const Divider(height: AppSpacing.xl * 1.5),
               if (match.teamA.teamId != null && match.teamB.teamId != null) ...[
                 Text('Enter the final score', style: textTheme.titleSmall),
                 const SizedBox(height: AppSpacing.xs),

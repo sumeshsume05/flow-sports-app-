@@ -41,6 +41,10 @@ const chatDisplayNameMaxLength = 24;
 /// away first.
 const chatDisplayNameMinLength = 4;
 
+/// Subcollection name under `matches/{matchId}` for live commentary entries.
+const commentaryCollection = 'commentary';
+const commentaryMaxLength = 200;
+
 /// Reaction keys viewers can tap on a match — single source of truth for
 /// both the Firestore field names (`match.reactionCounts[key]`) and the
 /// emoji glyphs shown in the UI.

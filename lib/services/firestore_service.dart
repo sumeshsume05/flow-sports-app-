@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
 import '../models/chat_message.dart';
+import '../models/commentary_entry.dart';
 import '../models/match.dart';
 import '../models/season.dart';
 import '../models/team.dart';
@@ -309,6 +310,42 @@ class FirestoreService {
       await _db.collection(chatMessagesCollection).add(message.toFirestore());
     } catch (e) {
       throw FirestoreWriteException('Could not send message.', e);
+    }
+  }
+
+  // --- Commentary ---
+
+  /// Chronological (oldest first) live-commentary feed for one match, capped
+  /// defensively even though a single match realistically only ever
+  /// accumulates a few dozen entries.
+  Stream<List<CommentaryEntry>> watchCommentary(String matchId, {int limit = 100}) {
+    return _db
+        .collection(matchesCollection)
+        .doc(matchId)
+        .collection(commentaryCollection)
+        .orderBy('createdAt')
+        .limit(limit)
+        .snapshots()
+        .map((snap) => snap.docs.map(CommentaryEntry.fromFirestore).toList());
+  }
+
+  /// Also denormalizes the entry's text/time onto the match doc itself
+  /// (`lastCommentaryText`/`lastCommentaryAt`), in the same batch, so the
+  /// match list can preview the latest entry without an extra listener per
+  /// card — same cost-conscious pattern as `reactionCounts`.
+  Future<void> postCommentary(String matchId, CommentaryEntry entry) async {
+    try {
+      final matchRef = _db.collection(matchesCollection).doc(matchId);
+      final entryRef = matchRef.collection(commentaryCollection).doc();
+      final batch = _db.batch();
+      batch.set(entryRef, entry.toFirestore());
+      batch.update(matchRef, {
+        'lastCommentaryText': entry.text,
+        'lastCommentaryAt': FieldValue.serverTimestamp(),
+      });
+      await batch.commit();
+    } catch (e) {
+      throw FirestoreWriteException('Could not post commentary.', e);
     }
   }
 }

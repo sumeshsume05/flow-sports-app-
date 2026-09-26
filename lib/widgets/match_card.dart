@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/design/app_radius.dart';
 import '../core/design/app_spacing.dart';
+import '../core/utils/relative_time.dart';
 import '../models/match.dart';
 import 'reaction_bar.dart';
 import 'status_badge.dart';
@@ -11,10 +12,11 @@ class MatchCard extends StatelessWidget {
   final VoidCallback? onTap;
   final Widget? trailing;
 
-  /// Shows a compact, tappable [ReactionBar] on the card — on by default for
-  /// the viewer match list so "which teams are popular" is visible at a
-  /// glance without opening each match. Admin's management list opts out to
-  /// keep that screen purely functional.
+  /// Shows a compact, tappable [ReactionBar] plus a one-line preview of the
+  /// latest live-commentary entry (if any) — on by default for the viewer
+  /// match list so "which teams are popular" and "what's happening" are both
+  /// visible at a glance without opening each match. Admin's management list
+  /// opts out of both to keep that screen purely functional.
   final bool showReactions;
 
   const MatchCard({
@@ -82,6 +84,28 @@ class MatchCard extends StatelessWidget {
                 if (showReactions) ...[
                   const SizedBox(height: AppSpacing.sm),
                   ReactionBar(matchId: match.id, counts: match.reactionCounts, compact: true),
+                ],
+                if (showReactions && match.lastCommentaryText != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('💬', style: TextStyle(fontSize: 13)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          match.lastCommentaryText!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textTheme.bodySmall,
+                        ),
+                      ),
+                      if (match.lastCommentaryAt != null) ...[
+                        const SizedBox(width: 4),
+                        Text(relativeTime(match.lastCommentaryAt!), style: textTheme.labelSmall),
+                      ],
+                    ],
+                  ),
                 ],
               ],
             ),

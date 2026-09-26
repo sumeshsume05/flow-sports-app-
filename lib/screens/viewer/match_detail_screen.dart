@@ -7,6 +7,7 @@ import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
+import '../../widgets/commentary_ticker.dart';
 import '../../widgets/reaction_bar.dart';
 import '../../widgets/status_badge.dart';
 
@@ -67,6 +68,8 @@ class MatchDetailScreen extends StatelessWidget {
                 ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0),
                 const SizedBox(height: AppSpacing.md),
                 ReactionBar(matchId: match.id, counts: match.reactionCounts),
+                const SizedBox(height: AppSpacing.md),
+                CommentaryTicker(matchId: match.id),
                 const SizedBox(height: AppSpacing.lg),
                 if (match.venue != null)
                   _InfoRow(icon: Icons.location_on_outlined, label: match.venue!),

@@ -101,6 +101,13 @@ class Match {
   /// docs written before this feature, hence the empty-map default.
   final Map<String, int> reactionCounts;
 
+  /// Denormalized copy of the latest `commentary` subcollection entry's
+  /// text/time, written alongside it in the same batch (see
+  /// `FirestoreService.postCommentary`) purely so the match list can show a
+  /// preview without an extra listener per card. Null until the first entry.
+  final String? lastCommentaryText;
+  final DateTime? lastCommentaryAt;
+
   /// Only set for `stage == tiebreaker` matches: which tie-breaker round this
   /// belongs to (1, 2, ...). A tie-breaker can itself end in another tie
   /// among some or all of its teams, needing a fresh round among just the
@@ -131,6 +138,8 @@ class Match {
     this.notes,
     required this.notifyTopic,
     this.reactionCounts = const {},
+    this.lastCommentaryText,
+    this.lastCommentaryAt,
     this.tiebreakerRound,
   });
 
@@ -161,6 +170,8 @@ class Match {
       reactionCounts: (data['reactionCounts'] as Map<String, dynamic>?)
               ?.map((k, v) => MapEntry(k, v as int)) ??
           const {},
+      lastCommentaryText: data['lastCommentaryText'] as String?,
+      lastCommentaryAt: (data['lastCommentaryAt'] as Timestamp?)?.toDate(),
       tiebreakerRound: data['tiebreakerRound'] as int?,
     );
   }

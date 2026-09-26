@@ -34,6 +34,16 @@ service cloud.firestore {
       // admin auth required — no other field may be touched by this path.
       allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactionCounts']) &&
         reactionCountsValid(request.resource.data.reactionCounts);
+
+      match /commentary/{entryId} {
+        allow read: if true;
+        allow create: if isAdmin() &&
+          request.resource.data.text is string &&
+          request.resource.data.text.size() > 0 &&
+          request.resource.data.text.size() <= 200 &&
+          request.resource.data.createdAt == request.time;
+        allow update, delete: if isAdmin();
+      }
     }
 
     match /admins/{uid} {
