@@ -11,6 +11,14 @@ service cloud.firestore {
       return s in ['upcoming', 'live', 'completed'];
     }
 
+    // Every count must stay a non-negative int — guards the viewer-writable
+    // reaction-toggle path (react +1 / undo -1) below from ever going negative.
+    function reactionCountsValid(counts) {
+      return (!('thumbsUp' in counts) || (counts.thumbsUp is int && counts.thumbsUp >= 0)) &&
+        (!('fire' in counts) || (counts.fire is int && counts.fire >= 0)) &&
+        (!('wow' in counts) || (counts.wow is int && counts.wow >= 0));
+    }
+
     match /teams/{teamId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
@@ -21,6 +29,11 @@ service cloud.firestore {
       allow create, update: if isAdmin() &&
         (!('status' in request.resource.data) || isValidStatus(request.resource.data.status));
       allow delete: if isAdmin();
+
+      // Viewers may react/undo (bump reaction counts up or down) with no
+      // admin auth required — no other field may be touched by this path.
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactionCounts']) &&
+        reactionCountsValid(request.resource.data.reactionCounts);
     }
 
     match /admins/{uid} {

@@ -228,6 +228,21 @@ class FirestoreService {
     }
   }
 
+  /// Atomically adjusts a match's reaction count for [emoji] by [delta]
+  /// (1 to react, -1 to undo). Cheap enough to allow without admin auth: it
+  /// rides on the same match doc viewers already stream via
+  /// [watchMatch]/[watchMatches], no extra reads.
+  Future<void> incrementReaction(String matchId, String emoji, {int delta = 1}) async {
+    try {
+      await _db
+          .collection(matchesCollection)
+          .doc(matchId)
+          .update({'reactionCounts.$emoji': FieldValue.increment(delta)});
+    } catch (e) {
+      throw FirestoreWriteException('Could not update reaction.', e);
+    }
+  }
+
   Future<void> setMatchStatus(String matchId, MatchStatus status) async {
     try {
       await _db.collection(matchesCollection).doc(matchId).update({'status': status.name});

@@ -97,6 +97,10 @@ class Match {
 
   final String notifyTopic;
 
+  /// Viewer reaction tap counts, keyed by [ReactionEmoji] key. Absent on
+  /// docs written before this feature, hence the empty-map default.
+  final Map<String, int> reactionCounts;
+
   /// Only set for `stage == tiebreaker` matches: which tie-breaker round this
   /// belongs to (1, 2, ...). A tie-breaker can itself end in another tie
   /// among some or all of its teams, needing a fresh round among just the
@@ -126,6 +130,7 @@ class Match {
     this.court,
     this.notes,
     required this.notifyTopic,
+    this.reactionCounts = const {},
     this.tiebreakerRound,
   });
 
@@ -153,6 +158,9 @@ class Match {
       court: data['court'] as String?,
       notes: data['notes'] as String?,
       notifyTopic: data['notifyTopic'] as String? ?? '',
+      reactionCounts: (data['reactionCounts'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(k, v as int)) ??
+          const {},
       tiebreakerRound: data['tiebreakerRound'] as int?,
     );
   }

@@ -29,6 +29,23 @@ const adminsCollection = 'admins';
 const configCollection = 'config';
 const seasonsCollection = 'seasons';
 
+/// Reaction keys viewers can tap on a match — single source of truth for
+/// both the Firestore field names (`match.reactionCounts[key]`) and the
+/// emoji glyphs shown in the UI.
+class ReactionEmoji {
+  static const thumbsUp = 'thumbsUp';
+  static const fire = 'fire';
+  static const wow = 'wow';
+  static const all = [thumbsUp, fire, wow];
+}
+
+String reactionEmojiGlyph(String key) => switch (key) {
+      ReactionEmoji.thumbsUp => '👍',
+      ReactionEmoji.fire => '🔥',
+      ReactionEmoji.wow => '😮',
+      _ => '❔',
+    };
+
 /// The season id used to seed the very first `Season` doc on first run, and
 /// to match every pre-existing team/match doc written before seasons existed
 /// (they all carry `season: '2026'` already — using the same string as the

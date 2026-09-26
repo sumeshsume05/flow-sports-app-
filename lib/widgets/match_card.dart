@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/design/app_radius.dart';
 import '../core/design/app_spacing.dart';
 import '../models/match.dart';
+import 'reaction_bar.dart';
 import 'status_badge.dart';
 
 class MatchCard extends StatelessWidget {
@@ -10,7 +11,19 @@ class MatchCard extends StatelessWidget {
   final VoidCallback? onTap;
   final Widget? trailing;
 
-  const MatchCard({super.key, required this.match, this.onTap, this.trailing});
+  /// Shows a compact, tappable [ReactionBar] on the card — on by default for
+  /// the viewer match list so "which teams are popular" is visible at a
+  /// glance without opening each match. Admin's management list opts out to
+  /// keep that screen purely functional.
+  final bool showReactions;
+
+  const MatchCard({
+    super.key,
+    required this.match,
+    this.onTap,
+    this.trailing,
+    this.showReactions = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -65,6 +78,10 @@ class MatchCard extends StatelessWidget {
                       ),
                     ],
                   ),
+                ],
+                if (showReactions) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  ReactionBar(matchId: match.id, counts: match.reactionCounts, compact: true),
                 ],
               ],
             ),
