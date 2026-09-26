@@ -331,6 +331,16 @@ class FirestoreService {
     }
   }
 
+  /// Moderation: removes a message. Already covered by the existing
+  /// `allow update, delete: if isAdmin()` chat rule — no rules change needed.
+  Future<void> deleteChatMessage(String messageId) async {
+    try {
+      await _db.collection(chatMessagesCollection).doc(messageId).delete();
+    } catch (e) {
+      throw FirestoreWriteException('Could not delete message.', e);
+    }
+  }
+
   // --- Commentary ---
 
   /// Chronological (oldest first) live-commentary feed for one match, capped

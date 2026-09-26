@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../core/design/app_radius.dart';
@@ -9,6 +10,7 @@ import '../../core/design/app_spacing.dart';
 import '../../models/chat_message.dart';
 import '../../services/firestore_service.dart';
 import '../../services/local_identity_service.dart';
+import '../../state/auth_state.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -184,13 +186,46 @@ class _ChatScreenState extends State<ChatScreen> {
 
 class _MessageBubble extends StatelessWidget {
   final ChatMessage message;
+  final _firestoreService = FirestoreService();
 
-  const _MessageBubble({required this.message});
+  _MessageBubble({required this.message});
+
+  Future<void> _confirmDelete(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete message?'),
+        content: Text('Remove this message from ${message.authorName}? This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      try {
+        await _firestoreService.deleteChatMessage(message.id);
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+        }
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    // Moderation is admin-only — same authorization already gating the
+    // admin screens elsewhere in the app, just consumed here from a viewer
+    // screen since chat itself needs no login.
+    final isAdmin = context.watch<AuthState>().isAdmin;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Container(
@@ -209,6 +244,17 @@ class _MessageBubble extends StatelessWidget {
                 if (message.createdAt != null) ...[
                   const SizedBox(width: AppSpacing.xs),
                   Text(DateFormat.Hm().format(message.createdAt!), style: textTheme.labelSmall),
+                ],
+                if (isAdmin) ...[
+                  const Spacer(),
+                  InkWell(
+                    onTap: () => _confirmDelete(context),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(Icons.delete_outline, size: 16, color: scheme.error),
+                    ),
+                  ),
                 ],
               ],
             ),
