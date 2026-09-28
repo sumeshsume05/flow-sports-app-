@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/design/app_colors.dart';
 import '../core/design/app_radius.dart';
 import '../core/design/app_spacing.dart';
 import '../core/utils/relative_time.dart';
@@ -35,10 +36,21 @@ class MatchCard extends StatelessWidget {
     final bWon = match.result == MatchResult.teamB;
     final textTheme = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
+    // Championship match — a bold gold/amber treatment, distinct from the
+    // primary orange already used all over the rest of the app, so this one
+    // card actually stands out at a glance rather than blending in.
+    final isFinal = match.matchCode == 'KOF';
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.xs + 2),
       child: Card(
+        color: isFinal ? AppColors.warningAmber.withValues(alpha: 0.16) : null,
+        shape: isFinal
+            ? RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                side: const BorderSide(color: AppColors.warningAmber, width: 2),
+              )
+            : null,
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(AppRadius.md),
