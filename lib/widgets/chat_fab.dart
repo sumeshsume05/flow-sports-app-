@@ -7,6 +7,7 @@ import '../core/design/app_radius.dart';
 import '../models/chat_message.dart';
 import '../services/firestore_service.dart';
 import '../services/local_identity_service.dart';
+import '../state/chat_settings_state.dart';
 import '../state/season_state.dart';
 
 /// Floating chat entry point shown on every viewer screen (wired in via a
@@ -45,6 +46,11 @@ class _ChatFabState extends State<ChatFab> {
 
   @override
   Widget build(BuildContext context) {
+    // Admin can close chat entirely (e.g. once an event's over, to stop
+    // off-topic messages on a sideloaded APK nobody's forced to update) —
+    // when closed, this whole floating entry point just disappears.
+    if (!context.watch<ChatSettingsState>().chatEnabled) return const SizedBox.shrink();
+
     // Watched (not read-once) so the badge/stream correctly follow an admin
     // switching the active season while this persistent overlay stays alive
     // across navigation — unlike a one-shot pushed screen, this widget isn't

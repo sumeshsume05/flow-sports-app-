@@ -26,6 +26,16 @@ service cloud.firestore {
         (!('teamB' in counts) || (counts.teamB is int && counts.teamB >= 0));
     }
 
+    // config/chatSettings not existing yet means chat has never been
+    // toggled off — defaults to enabled so this is backward compatible.
+    // This is the enforcement layer that actually matters: the app is a
+    // sideloaded APK shared outside any app store, so an admin turning chat
+    // off must also stop old, never-updated copies from still posting.
+    function chatIsEnabled() {
+      return !exists(/databases/$(database)/documents/config/chatSettings) ||
+        get(/databases/$(database)/documents/config/chatSettings).data.enabled != false;
+    }
+
     match /teams/{teamId} {
       allow read: if true;
       allow create, update, delete: if isAdmin();
@@ -80,7 +90,8 @@ service cloud.firestore {
       // No auth required to post — a locally chosen display name stands in
       // for identity. request.time forces a real server timestamp (via
       // FieldValue.serverTimestamp()), blocking a spoofed/backdated one.
-      allow create: if request.resource.data.text is string &&
+      allow create: if chatIsEnabled() &&
+        request.resource.data.text is string &&
         request.resource.data.text.size() > 0 &&
         request.resource.data.text.size() <= 280 &&
         request.resource.data.authorName is string &&

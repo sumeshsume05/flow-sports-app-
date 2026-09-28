@@ -309,6 +309,14 @@ class FirestoreService {
     }
   }
 
+  Future<void> setChatEnabled(bool enabled) async {
+    try {
+      await _db.collection(configCollection).doc('chatSettings').set({'enabled': enabled});
+    } catch (e) {
+      throw FirestoreWriteException('Could not update chat settings.', e);
+    }
+  }
+
   // --- Chat ---
 
   /// Bounded window of the most recent messages, newest first — kept small

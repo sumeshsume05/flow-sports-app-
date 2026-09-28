@@ -14,6 +14,7 @@ import '../../core/utils/match_export.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
 import '../../state/auth_state.dart';
+import '../../state/chat_settings_state.dart';
 import '../../state/season_state.dart';
 import '../../models/team.dart';
 
@@ -150,6 +151,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  Future<void> _setChatEnabled(bool enabled) async {
+    try {
+      await _firestoreService.setChatEnabled(enabled);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -200,6 +209,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           : ListView(
               padding: const EdgeInsets.all(AppSpacing.md),
               children: [
+                Card(
+                  child: SwitchListTile(
+                    secondary: const Icon(Icons.forum_outlined),
+                    title: const Text('Chat'),
+                    subtitle: Text(
+                      context.watch<ChatSettingsState>().chatEnabled
+                          ? 'Open — anyone can post'
+                          : 'Closed — hidden from every viewer, no new messages accepted',
+                    ),
+                    value: context.watch<ChatSettingsState>().chatEnabled,
+                    onChanged: _setChatEnabled,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.md),
                 for (final sport in Sport.all) ...[
                   Text(sport[0].toUpperCase() + sport.substring(1), style: textTheme.titleLarge),
                   const SizedBox(height: AppSpacing.sm),

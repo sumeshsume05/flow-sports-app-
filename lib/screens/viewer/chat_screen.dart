@@ -11,6 +11,7 @@ import '../../models/chat_message.dart';
 import '../../services/firestore_service.dart';
 import '../../services/local_identity_service.dart';
 import '../../state/auth_state.dart';
+import '../../state/chat_settings_state.dart';
 
 class ChatScreen extends StatefulWidget {
   final String season;
@@ -115,6 +116,25 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // The FAB that normally opens this screen already hides itself when
+    // chat is closed, but this screen can still be reached directly (e.g. a
+    // still-open tab from before it was closed) — show the same closed
+    // state rather than an empty/broken-looking composer.
+    if (!context.watch<ChatSettingsState>().chatEnabled) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Tournament Chat')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(AppSpacing.lg),
+            child: Text(
+              'Chat is currently closed by the tournament admin.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('Tournament Chat')),
       body: Column(

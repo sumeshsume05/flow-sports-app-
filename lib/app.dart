@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'core/theme.dart';
 import 'routes/app_router.dart';
 import 'state/auth_state.dart';
+import 'state/chat_settings_state.dart';
 import 'state/connectivity_state.dart';
 import 'state/season_state.dart';
 import 'widgets/offline_banner.dart';
@@ -19,6 +20,7 @@ class _FlowSportsAppState extends State<FlowSportsApp> {
   final _authState = AuthState();
   final _connectivityState = ConnectivityState();
   final _seasonState = SeasonState();
+  final _chatSettingsState = ChatSettingsState();
   late final _router = buildRouter(_authState);
 
   @override
@@ -26,6 +28,7 @@ class _FlowSportsAppState extends State<FlowSportsApp> {
     _authState.dispose();
     _connectivityState.dispose();
     _seasonState.dispose();
+    _chatSettingsState.dispose();
     super.dispose();
   }
 
@@ -36,6 +39,7 @@ class _FlowSportsAppState extends State<FlowSportsApp> {
         ChangeNotifierProvider.value(value: _authState),
         ChangeNotifierProvider.value(value: _connectivityState),
         ChangeNotifierProvider.value(value: _seasonState),
+        ChangeNotifierProvider.value(value: _chatSettingsState),
       ],
       child: MaterialApp.router(
         title: 'FLOW Arena',
