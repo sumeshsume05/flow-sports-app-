@@ -21,6 +21,12 @@ import '../state/auth_state.dart';
 import '../state/season_state.dart';
 import '../widgets/chat_fab.dart';
 
+/// Exposed so widgets built outside the routed tree (e.g. [AppUpdateGate],
+/// which wraps the Navigator rather than sitting inside it) can still reach
+/// a valid Navigator — `Navigator.of(context)` fails from a context that's
+/// an ancestor of the Navigator rather than a descendant of it.
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 GoRouter buildRouter(AuthState authState) {
   // Every screen that reads/writes teams or matches needs to know which
   // season is active. The router already has a BuildContext when it builds
@@ -30,6 +36,7 @@ GoRouter buildRouter(AuthState authState) {
   String season(BuildContext context) => context.watch<SeasonState>().activeSeasonId ?? '';
 
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/',
     refreshListenable: authState,
     redirect: (context, state) {

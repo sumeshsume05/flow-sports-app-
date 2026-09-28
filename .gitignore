@@ -46,3 +46,16 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Release signing — never commit the keystore or its credentials
+android/key.properties
+*.keystore
+*.jks
+
+# Published releases — regenerated fresh by scripts/publish_release.sh each
+# time, binaries don't belong in git history
+release/*.apk
+release/version.json
+
+# Firebase CLI's local hosting deploy cache
+.firebase/
