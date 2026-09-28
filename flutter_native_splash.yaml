@@ -1,0 +1,18 @@
+flutter_native_splash:
+  # No image — matches the app's actual Material 3 surface colors exactly
+  # (sampled live from AppColors.light/.dark) so the native splash is just
+  # a blank, color-matched frame with nothing to swap out when Flutter's
+  # first frame replaces it. Closest to "no logo, instant open."
+  color: "#FFF8F6"
+  color_dark: "#1A110F"
+  fullscreen: false
+
+  android_12:
+    color: "#FFF8F6"
+    color_dark: "#1A110F"
+    # No icon image on Android 12+ either — leaving the animated-icon
+    # unset makes flutter_native_splash render just the background color.
+
+  android: true
+  ios: false
+  web: false
