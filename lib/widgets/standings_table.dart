@@ -16,7 +16,13 @@ import '../models/standing_row.dart';
 class StandingsTable extends StatelessWidget {
   final List<StandingRow> rows;
 
-  const StandingsTable({super.key, required this.rows});
+  /// How many teams qualify out of this table — drives the "tied" highlight
+  /// and the qualifying-rank badge color. 4 for a single flat league table;
+  /// pass the section's own qualifier count (e.g. 2) when rendering one
+  /// section's table out of several.
+  final int qualifyCount;
+
+  const StandingsTable({super.key, required this.rows, this.qualifyCount = 4});
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +38,7 @@ class StandingsTable extends StatelessWidget {
         for (var i = 0; i < rows.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-            child: _StandingsRow(row: rows[i])
+            child: _StandingsRow(row: rows[i], qualifyCount: qualifyCount)
                 .animate(delay: (i * 40).ms)
                 .fadeIn(duration: 250.ms)
                 .slideX(begin: 0.05, end: 0, duration: 250.ms),
@@ -44,14 +50,15 @@ class StandingsTable extends StatelessWidget {
 
 class _StandingsRow extends StatelessWidget {
   final StandingRow row;
+  final int qualifyCount;
 
-  const _StandingsRow({required this.row});
+  const _StandingsRow({required this.row, required this.qualifyCount});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final tied = row.tiedWithAnother && (row.rank ?? 99) <= 4;
+    final tied = row.tiedWithAnother && (row.rank ?? 99) <= qualifyCount;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md, vertical: AppSpacing.sm + 2),
@@ -64,13 +71,13 @@ class _StandingsRow extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 15,
-            backgroundColor: (row.rank ?? 99) <= 4
+            backgroundColor: (row.rank ?? 99) <= qualifyCount
                 ? scheme.primary.withValues(alpha: 0.15)
                 : scheme.surfaceContainerHighest,
             child: Text(
               '${row.rank}',
               style: textTheme.labelLarge?.copyWith(
-                color: (row.rank ?? 99) <= 4 ? scheme.primary : scheme.onSurfaceVariant,
+                color: (row.rank ?? 99) <= qualifyCount ? scheme.primary : scheme.onSurfaceVariant,
               ),
             ),
           ),

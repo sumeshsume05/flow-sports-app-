@@ -162,6 +162,7 @@ List<Match> resolveDependentSlots({
           matchNumber: m.matchNumber,
           label: m.label,
           matchCode: m.matchCode,
+          section: m.section,
           teamA: teamA,
           teamB: teamB,
           teamASource: m.teamASource,

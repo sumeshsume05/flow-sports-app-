@@ -79,6 +79,11 @@ class Match {
   final String label;
   final String matchCode;
 
+  /// Which league section this match belongs to (e.g. 'A', 'B'), or null for
+  /// a non-sectioned category or any non-league-stage match. See
+  /// round_robin.generateSectionedLeagueMatches.
+  final String? section;
+
   final TeamRef teamA;
   final TeamRef teamB;
   final MatchSource? teamASource;
@@ -128,6 +133,7 @@ class Match {
     required this.matchNumber,
     required this.label,
     required this.matchCode,
+    this.section,
     required this.teamA,
     required this.teamB,
     this.teamASource,
@@ -159,6 +165,7 @@ class Match {
       matchNumber: data['matchNumber'] as int,
       label: data['label'] as String,
       matchCode: data['matchCode'] as String,
+      section: data['section'] as String?,
       teamA: TeamRef.fromMap(data['teamA'] as Map<String, dynamic>?),
       teamB: TeamRef.fromMap(data['teamB'] as Map<String, dynamic>?),
       teamASource: MatchSource.fromMap(data['teamASource'] as Map<String, dynamic>?),
@@ -192,6 +199,7 @@ class Match {
         'matchNumber': matchNumber,
         'label': label,
         'matchCode': matchCode,
+        'section': section,
         'teamA': teamA.toMap(),
         'teamB': teamB.toMap(),
         'teamASource': teamASource?.toMap(),

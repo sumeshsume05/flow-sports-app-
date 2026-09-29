@@ -127,6 +127,16 @@ class FirestoreService {
     }
   }
 
+  /// [section] is the team's new league section (e.g. 'A', 'B'), or null to
+  /// clear it back to a non-sectioned team.
+  Future<void> updateTeamSection(String teamId, String? section) async {
+    try {
+      await _db.collection(teamsCollection).doc(teamId).update({'section': section});
+    } catch (e) {
+      throw FirestoreWriteException('Could not update team section.', e);
+    }
+  }
+
   Future<void> deleteTeam(String teamId) async {
     try {
       await _db.collection(teamsCollection).doc(teamId).delete();

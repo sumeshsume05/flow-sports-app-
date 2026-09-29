@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants.dart';
+import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../core/utils/round_robin.dart';
@@ -25,7 +26,19 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
   bool _generating = false;
   String? _message;
 
-  Future<void> _generate(List<Team> teams) async {
+  /// null = no team has a section (single round-robin); a sorted list of
+  /// section names = every team has one (sectioned round-robin). Mixed —
+  /// some teams sectioned, some not — is its own state so the UI can block
+  /// generation with a clear message instead of guessing what was meant.
+  ({List<String>? sections, bool mixed}) _sectionState(List<Team> teams) {
+    final withSection = teams.where((t) => t.section != null).length;
+    if (withSection == 0) return (sections: null, mixed: false);
+    if (withSection < teams.length) return (sections: null, mixed: true);
+    final sections = teams.map((t) => t.section!).toSet().toList()..sort();
+    return (sections: sections, mixed: false);
+  }
+
+  Future<void> _generate(List<Team> teams, List<String>? sections) async {
     setState(() {
       _generating = true;
       _message = null;
@@ -46,12 +59,19 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
         return;
       }
 
-      final matches = generateLeagueMatches(
-        teams: teams,
-        sport: Sport.badminton,
-        category: widget.category,
-        season: widget.season,
-      );
+      final matches = sections == null
+          ? generateLeagueMatches(
+              teams: teams,
+              sport: Sport.badminton,
+              category: widget.category,
+              season: widget.season,
+            )
+          : generateSectionedLeagueMatches(
+              teams: teams,
+              sport: Sport.badminton,
+              category: widget.category,
+              season: widget.season,
+            );
       await _firestoreService.addMatchesBatch(matches);
 
       setState(() => _message = 'Generated ${matches.length} league matches. Good luck out there!');
@@ -73,6 +93,11 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
         stream: _teamsStream,
         builder: (context, snapshot) {
           final teams = snapshot.data ?? [];
+          final sectionState = _sectionState(teams);
+          final sections = sectionState.sections;
+
+          String pairCountText(int n) => n < 2 ? '0' : '${n * (n - 1) ~/ 2}';
+
           return Padding(
             padding: const EdgeInsets.all(AppSpacing.md),
             child: Column(
@@ -80,16 +105,37 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
               children: [
                 Text('${teams.length} teams found for this category.', style: textTheme.titleMedium),
                 const SizedBox(height: AppSpacing.xs),
-                Text(
-                  'This creates ${teams.length < 2 ? 0 : teams.length * (teams.length - 1) ~/ 2} '
-                  'league matches — everyone plays everyone once, round-robin style.',
-                  style: textTheme.bodySmall,
-                ),
+                if (sectionState.mixed)
+                  Text(
+                    'Some teams have a league section set and some don\'t. Assign every team to a '
+                    'section (or clear all of them) in Admin > Teams before generating.',
+                    style: textTheme.bodySmall?.copyWith(color: AppColors.warningAmber),
+                  )
+                else if (sections != null)
+                  Text(
+                    'Sectioned round-robin detected: ${sections.map((s) {
+                      final n = teams.where((t) => t.section == s).length;
+                      return 'Section $s ($n teams, ${pairCountText(n)} matches)';
+                    }).join(' · ')}. Teams only play others in their own section.',
+                    style: textTheme.bodySmall,
+                  )
+                else
+                  Text(
+                    'This creates ${pairCountText(teams.length)} '
+                    'league matches — everyone plays everyone once, round-robin style.',
+                    style: textTheme.bodySmall,
+                  ),
                 const SizedBox(height: AppSpacing.lg),
                 FilledButton.icon(
                   icon: const Icon(Icons.auto_awesome),
-                  label: Text(_generating ? 'Generating...' : 'Generate League Schedule'),
-                  onPressed: teams.length < 2 || _generating ? null : () => _generate(teams),
+                  label: Text(_generating
+                      ? 'Generating...'
+                      : sections != null
+                          ? 'Generate Sectioned Schedule'
+                          : 'Generate League Schedule'),
+                  onPressed: teams.length < 2 || _generating || sectionState.mixed
+                      ? null
+                      : () => _generate(teams, sections),
                 ),
                 if (_message != null)
                   Padding(
