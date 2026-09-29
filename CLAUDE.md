@@ -57,6 +57,41 @@ the update pipeline at all, build the APK locally and send it to them
 directly (bypasses GitHub Releases and `version.json` entirely, so no
 other install is affected).
 
+## Tournament / match logic
+
+The codebase deliberately keeps each sport's rules self-contained (plain
+string `Sport`/`Category` identifiers in `lib/core/constants.dart`, looped
+over via `Sport.all`/`Category.all` — see the comments there) so adding a
+new sport later means adding a new entry plus that sport's own logic
+functions, **not** editing badminton's. If a new sport is added, give it
+its own subsection below rather than folding it into badminton's rules.
+
+### Badminton (current, only sport implemented)
+
+- **League stage** (`lib/core/utils/standings_calculator.dart`): win = 2
+  pts, tie = 1 pt, loss = 0. Ranked by points, then total points scored
+  (own game score summed across matches) as the tiebreaker — same role as
+  goal difference/run rate elsewhere.
+- **Qualifying for the knockout stage**: top 4 by that ranking. A genuine
+  tie (same points *and* same points scored) at or around the 4th-place
+  cutoff triggers a tie-breaker match between just the tied teams
+  (`resolveTieChain`) rather than being guessed — can chain into further
+  rounds if still tied after one.
+- **Knockout bracket** (`lib/core/utils/bracket_resolver.dart`) — a fixed
+  4-team "page playoff", not a generic bracket generator:
+  - KO1: Seed 1 vs Seed 2 → winner goes **straight to the Final**
+  - KO2: Seed 3 vs Seed 4 → winner advances to KO3
+  - KO3: KO1's loser vs KO2's winner → winner is the Final's 2nd finalist
+  - KOF (Final): KO1's winner vs KO3's winner
+- **Podium** (`lib/core/utils/podium_resolver.dart`): 1st/2nd = KOF
+  winner/loser; the two semifinalists = KO2 and KO3's losers. Derived
+  entirely from the 4 knockout matches, no separate podium data.
+- **Ties are never guessed** — a knockout match can't legitimately end
+  level in badminton, so the admin's score-entry screen blocks entering a
+  tied result there, and both `resolveDependentSlots` and `computePodium`
+  throw/return-undecided rather than silently treating "not team A" as
+  "team B won."
+
 ## Firestore rules
 
 Deploy with `firebase deploy --only firestore:rules --project
