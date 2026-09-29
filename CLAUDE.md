@@ -1,9 +1,12 @@
 # FLOW Arena
 
 Live companion app for FLOW's internal company badminton tournament (an
-anniversary sports event). Full context: see the "FLOW Arena — PRD" doc
-(ask the user for the link, or check their Claude Docs list — it's not
-duplicated here since it changes independently of the code).
+anniversary sports event). Full context, goals, and the tournament-engine
+roadmap: see the **FLOW Arena — PRD** doc:
+https://claude.ai/code/artifact/dd15edcd-f14d-47b7-b39b-0bd18970826d
+(a Claude Doc, kept here so it's reachable from any machine this repo is
+cloned onto — not duplicated in full here since it changes independently
+of the code and is meant to be edited in place, not copy-pasted).
 
 - App ID: `com.flowglobal.flow_sports_app`
 - Android only (no iOS, no web)
@@ -91,6 +94,26 @@ its own subsection below rather than folding it into badminton's rules.
   tied result there, and both `resolveDependentSlots` and `computePodium`
   throw/return-undecided rather than silently treating "not team A" as
   "team B won."
+
+#### Planned changes (not yet implemented, as of 2026-09-29)
+
+The goal is a configurable tournament engine, not hardcoded badminton
+rules: admins define a tournament's sections, qualification rules,
+bracket shape, tie-breakers, and stages through configuration, per
+sport — not through code changes per format. This applies to every
+sport the app ever supports, not just badminton.
+
+Full detail — including two concrete worked example formats (sections
+feeding one shared knockout vs. sections resolving independently), the
+complete list of dimensions to make configurable, a 4-phase suggested
+roadmap diagram, and an architecture sketch — lives in the "Future
+Adaptation Plan" section of the FLOW Arena PRD linked at the top of
+this file. This note is intentionally a summary, not a duplicate —
+treat the PRD as the source of truth for this plan, since it's a
+living doc the user may keep editing.
+
+None of this is designed or built yet — treat it as direction, not a
+spec, until the user works through the actual design with Claude.
 
 ## Firestore rules
 
