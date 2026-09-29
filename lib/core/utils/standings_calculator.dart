@@ -76,12 +76,13 @@ List<StandingRow> computeStandings({
 /// True if any genuine tie (same points AND same points scored) affects who
 /// occupies the top-4 cutoff — i.e. the seeding order used for knockout
 /// generation is ambiguous and needs manual admin confirmation.
-bool topFourHasAmbiguousTie(List<StandingRow> standings) {
-  if (standings.length < 4) return standings.any((r) => r.tiedWithAnother);
-  final cutoffTied = standings.length > 4 &&
-      standings[3].points == standings[4].points &&
-      standings[3].pointsScored == standings[4].pointsScored;
-  return standings.take(4).any((r) => r.tiedWithAnother) || cutoffTied;
+bool topFourHasAmbiguousTie(List<StandingRow> standings, {int cutoffCount = 4}) {
+  if (standings.length < cutoffCount) return standings.any((r) => r.tiedWithAnother);
+  final cutoffIndex = cutoffCount - 1;
+  final cutoffTied = standings.length > cutoffCount &&
+      standings[cutoffIndex].points == standings[cutoffIndex + 1].points &&
+      standings[cutoffIndex].pointsScored == standings[cutoffIndex + 1].pointsScored;
+  return standings.take(cutoffCount).any((r) => r.tiedWithAnother) || cutoffTied;
 }
 
 /// Everyone who could plausibly claim a top-4 spot: the true top 4 by full
@@ -97,13 +98,19 @@ bool topFourHasAmbiguousTie(List<StandingRow> standings) {
 /// tied with anyone, but was being excluded entirely instead of kept ahead
 /// of 4th). Taking the already-correctly-sorted top 4 unconditionally, and
 /// only *adding* rows genuinely tied with the cutoff, avoids that.
-List<StandingRow> candidatesForTopFour(List<StandingRow> standings) {
-  if (standings.length <= 4) return List.of(standings);
-  final cutoff = standings[3];
+///
+/// [cutoffCount] generalizes this beyond exactly 4 — e.g. 2, for a league
+/// section that qualifies its top 2 into a shared knockout stage alongside
+/// another section's top 2 (see round_robin.generateSectionedLeagueMatches).
+/// The "TopFour" name is kept for the default/common case and because it's
+/// already used throughout the tests and the single-table admin screen.
+List<StandingRow> candidatesForTopFour(List<StandingRow> standings, {int cutoffCount = 4}) {
+  if (standings.length <= cutoffCount) return List.of(standings);
+  final cutoff = standings[cutoffCount - 1];
   final extras = standings
-      .skip(4)
+      .skip(cutoffCount)
       .where((r) => r.points == cutoff.points && r.pointsScored == cutoff.pointsScored);
-  return [...standings.take(4), ...extras];
+  return [...standings.take(cutoffCount), ...extras];
 }
 
 /// The *only* tie that actually decides who qualifies out of [candidates]
@@ -115,23 +122,27 @@ List<StandingRow> candidatesForTopFour(List<StandingRow> standings) {
 /// must not be treated the same as this one. Returns null when
 /// `candidates.length <= 4` (no team below the cutoff is tied with it, so
 /// there's no qualification ambiguity at all).
-List<StandingRow>? decidingTieCluster(List<StandingRow> candidates) {
-  if (candidates.length <= 4) return null;
-  final cutoff = candidates[3];
+///
+/// [cutoffCount] must match whatever was passed to [candidatesForTopFour] to
+/// build [candidates] — see that function's doc for the section use case.
+List<StandingRow>? decidingTieCluster(List<StandingRow> candidates, {int cutoffCount = 4}) {
+  if (candidates.length <= cutoffCount) return null;
+  final cutoffIndex = cutoffCount - 1;
+  final cutoff = candidates[cutoffIndex];
   bool sameAsCutoff(StandingRow r) =>
       r.points == cutoff.points && r.pointsScored == cutoff.pointsScored;
 
-  var start = 3;
-  // Extend left in case 3rd place (or earlier) is also tied with the cutoff
-  // value, not just teams pulled in from below it.
+  var start = cutoffIndex;
+  // Extend left in case the place just above the cutoff (or earlier) is
+  // also tied with the cutoff value, not just teams pulled in from below it.
   while (start > 0 && sameAsCutoff(candidates[start - 1])) {
     start--;
   }
-  var end = 3;
+  var end = cutoffIndex;
   while (end + 1 < candidates.length && sameAsCutoff(candidates[end + 1])) {
     end++;
   }
-  if (end <= 3) return null; // nobody below the cutoff is actually tied with it
+  if (end <= cutoffIndex) return null; // nobody below the cutoff is actually tied with it
   return candidates.sublist(start, end + 1);
 }
 

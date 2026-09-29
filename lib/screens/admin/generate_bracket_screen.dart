@@ -8,8 +8,32 @@ import '../../core/design/app_spacing.dart';
 import '../../core/utils/bracket_resolver.dart';
 import '../../core/utils/round_robin.dart';
 import '../../core/utils/standings_calculator.dart';
+import '../../models/match.dart';
 import '../../models/standing_row.dart';
+import '../../models/team.dart';
 import '../../services/firestore_service.dart';
+
+/// One qualification group feeding the (always exactly 4-team) knockout
+/// bracket: either the whole category (non-sectioned — [label] is null,
+/// [qualifyCount] is 4), or one league section (sectioned — [label] is the
+/// section name, e.g. 'A', [qualifyCount] is 2). Mutable so the admin's
+/// manual reorder (move up/down) can update it in place with setState,
+/// without a full reload.
+class _SectionPanel {
+  final String? label;
+  final String? section;
+  final int qualifyCount;
+  List<StandingRow> candidates;
+  final TieChainResult? chain;
+
+  _SectionPanel({
+    required this.label,
+    required this.section,
+    required this.qualifyCount,
+    required this.candidates,
+    required this.chain,
+  });
+}
 
 class GenerateBracketScreen extends StatefulWidget {
   final String category;
@@ -23,19 +47,41 @@ class GenerateBracketScreen extends StatefulWidget {
 
 class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
   final _firestoreService = FirestoreService();
-  // All teams in seed contention — normally exactly 4, but wider when teams
-  // are tied on points at the 4th-place cutoff, since the app can't guess
-  // which tied team should take the last spot. The admin arranges this list
-  // (reorder, or just leave lower ones below the line) and whichever 4 end
-  // up on top when generating are the ones seeded.
-  List<StandingRow>? _candidates;
-  // Non-null exactly when the cutoff is ambiguous — walks however many
-  // tie-breaker rounds have actually been played for that group so far (a
-  // round can itself end in another tie, needing a further round).
-  TieChainResult? _chain;
+  List<_SectionPanel>? _panels;
+  final Set<int> _schedulingIndexes = {};
   bool _generating = false;
-  bool _scheduling = false;
   String? _message;
+
+  _SectionPanel _buildPanel({
+    required String? label,
+    required String? section,
+    required int qualifyCount,
+    required List<Team> teams,
+    required List<Match> leagueMatches,
+    required List<Match> tiebreakerMatches,
+  }) {
+    final standings = computeStandings(teams: teams, leagueMatches: leagueMatches);
+    final rawCandidates = candidatesForTopFour(standings, cutoffCount: qualifyCount);
+    final cluster = decidingTieCluster(rawCandidates, cutoffCount: qualifyCount);
+
+    TieChainResult? chain;
+    var candidates = rawCandidates;
+    if (cluster != null) {
+      chain = resolveTieChain(originalCluster: cluster, allTiebreakerMatches: tiebreakerMatches);
+      candidates = List.of(rawCandidates);
+      final startIndex = candidates.indexWhere((r) => r.teamId == cluster.first.teamId);
+      for (var k = 0; k < chain.order.length; k++) {
+        candidates[startIndex + k] = chain.order[k];
+      }
+    }
+    return _SectionPanel(
+      label: label,
+      section: section,
+      qualifyCount: qualifyCount,
+      candidates: candidates,
+      chain: chain,
+    );
+  }
 
   Future<void> _load() async {
     final teams = await _firestoreService.fetchTeams(
@@ -55,26 +101,39 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
       season: widget.season,
       stage: 'tiebreaker',
     );
-    final standings = computeStandings(teams: teams, leagueMatches: leagueMatches);
-    final rawCandidates = candidatesForTopFour(standings);
-    final cluster = decidingTieCluster(rawCandidates);
 
-    TieChainResult? chain;
-    var candidates = rawCandidates;
-    if (cluster != null) {
-      chain = resolveTieChain(originalCluster: cluster, allTiebreakerMatches: tiebreakerMatches);
-      candidates = List.of(rawCandidates);
-      final startIndex = candidates.indexWhere((r) => r.teamId == cluster.first.teamId);
-      for (var k = 0; k < chain.order.length; k++) {
-        candidates[startIndex + k] = chain.order[k];
-      }
+    final withSection = teams.where((t) => t.section != null).length;
+    final sectioned = withSection > 0 && withSection == teams.length;
+
+    List<_SectionPanel> panels;
+    if (!sectioned) {
+      panels = [
+        _buildPanel(
+          label: null,
+          section: null,
+          qualifyCount: 4,
+          teams: teams,
+          leagueMatches: leagueMatches,
+          tiebreakerMatches: tiebreakerMatches,
+        ),
+      ];
+    } else {
+      final sections = teams.map((t) => t.section!).toSet().toList()..sort();
+      panels = [
+        for (final s in sections)
+          _buildPanel(
+            label: s,
+            section: s,
+            qualifyCount: 2,
+            teams: teams.where((t) => t.section == s).toList(),
+            leagueMatches: leagueMatches.where((m) => m.section == s).toList(),
+            tiebreakerMatches: tiebreakerMatches.where((m) => m.section == s).toList(),
+          ),
+      ];
     }
 
     if (mounted) {
-      setState(() {
-        _candidates = candidates;
-        _chain = chain;
-      });
+      setState(() => _panels = panels);
     }
   }
 
@@ -84,42 +143,46 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
     _load();
   }
 
-  void _moveUp(int index) {
-    if (index == 0) return;
+  void _moveUp(int panelIndex, int rowIndex) {
+    if (rowIndex == 0) return;
     setState(() {
-      final row = _candidates!.removeAt(index);
-      _candidates!.insert(index - 1, row);
+      final list = _panels![panelIndex].candidates;
+      final row = list.removeAt(rowIndex);
+      list.insert(rowIndex - 1, row);
     });
   }
 
-  void _moveDown(int index) {
-    if (index == _candidates!.length - 1) return;
+  void _moveDown(int panelIndex, int rowIndex) {
+    final list = _panels![panelIndex].candidates;
+    if (rowIndex == list.length - 1) return;
     setState(() {
-      final row = _candidates!.removeAt(index);
-      _candidates!.insert(index + 1, row);
+      final row = list.removeAt(rowIndex);
+      list.insert(rowIndex + 1, row);
     });
   }
 
-  Future<void> _scheduleTiebreaker(List<StandingRow> group, int round) async {
-    setState(() => _scheduling = true);
+  Future<void> _scheduleTiebreaker(int panelIndex, List<StandingRow> group, int round) async {
+    setState(() => _schedulingIndexes.add(panelIndex));
     try {
+      final section = _panels![panelIndex].section;
       final matches = generateTiebreakerMatches(
         tiedTeams: group,
         sport: Sport.badminton,
         category: widget.category,
         season: widget.season,
         round: round,
+        section: section,
       );
       await _firestoreService.addMatchesBatch(matches);
-      setState(() => _message = round > 1
+      _message = round > 1
           ? 'Tie-breaker Round $round scheduled — the previous round ended in another tie for these '
               'teams, so they play again. Enter the result in Admin > Matches, then come back here.'
-          : 'Tie-breaker match scheduled — enter its result in Admin > Matches, then come back here.');
+          : 'Tie-breaker match scheduled — enter its result in Admin > Matches, then come back here.';
       await _load();
     } catch (e) {
       setState(() => _message = '$e');
     } finally {
-      if (mounted) setState(() => _scheduling = false);
+      if (mounted) setState(() => _schedulingIndexes.remove(panelIndex));
     }
   }
 
@@ -127,47 +190,59 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
+  String _panelPrefix(_SectionPanel panel) => panel.label == null ? '' : 'Section ${panel.label}: ';
+
   Future<void> _generate() async {
     if (_generating) return;
-    final candidates = _candidates;
-    if (candidates == null || candidates.length < 4) {
-      _showBlocked('Need at least 4 teams with completed league matches.');
+    final panels = _panels;
+    if (panels == null) return;
+
+    if (panels.length > 2) {
+      _showBlocked(
+          'More than 2 league sections isn\'t supported yet — the knockout bracket is fixed at 4 teams.');
       return;
     }
-    final chain = _chain;
-    if (chain != null && chain.contestedGroup != null) {
-      final names = chain.contestedGroup!.map((r) => r.teamName).join(' vs ');
-      if (chain.contestedGroupMatches.isNotEmpty) {
-        // A tie-breaker is already scheduled and unfinished — this is an
-        // explicit commitment in progress, so it's a hard block, not a
-        // dialog to click past.
-        _showBlocked('Finish the tie-breaker for $names before generating the bracket.');
+
+    for (final panel in panels) {
+      if (panel.candidates.length < panel.qualifyCount) {
+        _showBlocked(
+            '${_panelPrefix(panel)}Need at least ${panel.qualifyCount} teams with completed league matches.');
         return;
       }
-      // Nothing scheduled yet — the cutoff is still genuinely ambiguous, so
-      // never generate silently off whatever arbitrary order the tied teams
-      // happen to be sorted in. Always surface this and require an explicit
-      // confirmation, whether the tap was deliberate or accidental.
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Teams are still tied'),
-          content: Text(
-            '$names are still tied for the last spot and haven\'t played a '
-            'tie-breaker. If you continue, the order currently shown above '
-            'will decide who gets it.',
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Generate Anyway'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true) return;
+      final chain = panel.chain;
+      if (chain != null && chain.contestedGroup != null && chain.contestedGroupMatches.isNotEmpty) {
+        final names = chain.contestedGroup!.map((r) => r.teamName).join(' vs ');
+        _showBlocked('${_panelPrefix(panel)}Finish the tie-breaker for $names before generating the bracket.');
+        return;
+      }
     }
+
+    for (final panel in panels) {
+      final chain = panel.chain;
+      if (chain != null && chain.contestedGroup != null && chain.contestedGroupMatches.isEmpty) {
+        final names = chain.contestedGroup!.map((r) => r.teamName).join(' vs ');
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Teams are still tied'),
+            content: Text(
+              '${_panelPrefix(panel)}$names are still tied for the last spot and haven\'t played a '
+              'tie-breaker. If you continue, the order currently shown above '
+              'will decide who gets it.',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Generate Anyway'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) return;
+      }
+    }
+
     setState(() {
       _generating = true;
       _message = null;
@@ -186,8 +261,22 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
         return;
       }
 
+      // Non-sectioned: straight top 4. Sectioned (always exactly 2 sections,
+      // 2 qualifiers each, guarded above): seed 1 = Section A's 1st, seed 2 =
+      // Section B's 1st, seed 3 = Section A's 2nd, seed 4 = Section B's 2nd —
+      // so KO1 and KO2 each pit different sections against each other rather
+      // than a same-section rematch in the very first knockout round.
+      final top4Seeds = panels.length == 1
+          ? panels[0].candidates.take(4).toList()
+          : [
+              panels[0].candidates[0],
+              panels[1].candidates[0],
+              panels[0].candidates[1],
+              panels[1].candidates[1],
+            ];
+
       final matches = generateKnockoutMatches(
-        top4Seeds: _candidates!.take(4).toList(),
+        top4Seeds: top4Seeds,
         sport: Sport.badminton,
         category: widget.category,
         season: widget.season,
@@ -204,167 +293,27 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    final candidates = _candidates;
-    final chain = _chain;
-    final hasExtras = candidates != null && candidates.length > 4;
-    // A tie can also sit entirely within the visible top 4 (e.g. seed 1 vs 2
-    // dead level) without adding any extra "OUT" candidates — still worth
-    // flagging so the admin doesn't miss it.
-    final hasTieWithinTop4 =
-        candidates != null && candidates.take(4).any((r) => r.tiedWithAnother);
-    final contestedGroup = chain?.contestedGroup;
-    // A round has been scheduled for the current contest but isn't finished.
-    final contestedInProgress = contestedGroup != null && chain!.contestedGroupMatches.isNotEmpty;
-    final contestStart =
-        contestedGroup == null ? null : candidates!.indexOf(contestedGroup.first);
+    final panels = _panels;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Generate Knockout Bracket')),
-      body: candidates == null
+      body: panels == null
           ? const Center(child: CircularProgressIndicator())
           : SingleChildScrollView(
               padding: const EdgeInsets.all(AppSpacing.md),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Confirm seed order (Seed 1 vs 2, Seed 3 vs 4):',
-                      style: textTheme.titleSmall),
-                  if (hasExtras)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.sm),
-                      child: Text(
-                        'Several teams are tied for the last spot. Schedule a tie-breaker '
-                        'match below, or use the arrows to move whichever team should take '
-                        '4th place to the top of the list — anyone left below the line is out.',
-                        style: TextStyle(color: AppColors.warningAmber, fontWeight: FontWeight.w600),
-                      ),
-                    )
-                  else if (hasTieWithinTop4)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.sm),
-                      child: Text(
-                        'Two or more teams above (highlighted) are dead level on points and '
-                        "total score. This doesn't change who qualifies — only who plays whom "
-                        'in the bracket. Use the arrows if you want to set their order, '
-                        "otherwise it's fine to generate as-is.",
-                        style: TextStyle(color: AppColors.warningAmber, fontWeight: FontWeight.w600),
-                      ),
+                  for (var p = 0; p < panels.length; p++) ...[
+                    _SectionPanelView(
+                      panel: panels[p],
+                      scheduling: _schedulingIndexes.contains(p),
+                      onMoveUp: (row) => _moveUp(p, row),
+                      onMoveDown: (row) => _moveDown(p, row),
+                      onScheduleTiebreaker: (group, round) => _scheduleTiebreaker(p, group, round),
                     ),
-                  const SizedBox(height: AppSpacing.sm + 4),
-                  for (var i = 0; i < candidates.length; i++) ...[
-                    if (contestStart != null && i == contestStart)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                        child: Row(
-                          children: [
-                            Expanded(child: Divider(color: AppColors.warningAmber)),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                              child: Text(
-                                'CONTESTING LAST SPOT',
-                                style: textTheme.labelSmall
-                                    ?.copyWith(color: AppColors.warningAmber, letterSpacing: 0.6),
-                              ),
-                            ),
-                            Expanded(child: Divider(color: AppColors.warningAmber)),
-                          ],
-                        ),
-                      )
-                    else if (contestStart == null && hasExtras && i == 4)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
-                        child: Divider(thickness: 2),
-                      ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: AppSpacing.xs + 2),
-                      child: Card(
-                        color: contestStart != null && i >= contestStart
-                            ? AppColors.warningAmber.withValues(alpha: 0.12)
-                            : (i >= 4
-                                ? scheme.surfaceContainerHighest
-                                : (candidates[i].tiedWithAnother
-                                    ? AppColors.warningAmber.withValues(alpha: 0.12)
-                                    : null)),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            child: Text(
-                              contestStart != null && i >= contestStart
-                                  ? '—'
-                                  : (i < 4 ? '${i + 1}' : '—'),
-                            ),
-                          ),
-                          title: Text(candidates[i].teamName),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${candidates[i].points} pts · ${candidates[i].pointsScored} scored (league)'
-                                '${contestStart != null && i >= contestStart ? " — contesting" : (contestStart == null && i >= 4 ? " — OUT" : "")}',
-                              ),
-                              if (chain?.lastRoundStats[candidates[i].teamId] case final tb?)
-                                Text(
-                                  'Tie-breaker: ${tb.points} pts · ${tb.pointsScored} scored',
-                                  style: TextStyle(color: AppColors.warningAmber),
-                                ),
-                            ],
-                          ),
-                          isThreeLine: chain?.lastRoundStats.containsKey(candidates[i].teamId) ?? false,
-                          trailing: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                  icon: const Icon(Icons.arrow_upward), onPressed: () => _moveUp(i)),
-                              IconButton(
-                                  icon: const Icon(Icons.arrow_downward),
-                                  onPressed: () => _moveDown(i)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                    if (p < panels.length - 1) const SizedBox(height: AppSpacing.lg),
                   ],
-                  if (contestedGroup != null && !contestedInProgress)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.sm),
-                      child: _TiebreakerActionCard(
-                        teamNames: contestedGroup.map((r) => r.teamName).join(' vs '),
-                        round: chain!.nextRound,
-                        loading: _scheduling,
-                        onTap: _scheduling
-                            ? null
-                            : () => _scheduleTiebreaker(contestedGroup, chain.nextRound),
-                      ),
-                    ),
-                  if (contestedGroup != null && contestedInProgress)
-                    Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.sm),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(AppSpacing.md),
-                        decoration: BoxDecoration(
-                          color: AppColors.warningAmber.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(color: AppColors.warningAmber.withValues(alpha: 0.4)),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.hourglass_top_rounded, color: AppColors.warningAmber),
-                            const SizedBox(width: AppSpacing.sm),
-                            Expanded(
-                              child: Text(
-                                'Tie-breaker${chain.nextRound > 1 ? ' Round ${chain.nextRound}' : ''} '
-                                'in progress for ${contestedGroup.map((r) => r.teamName).join(' vs ')} — '
-                                'enter its result in Admin > Matches, then come back here.',
-                                style: TextStyle(
-                                    color: AppColors.warningAmber, fontWeight: FontWeight.w600),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                   const SizedBox(height: AppSpacing.lg),
                   SizedBox(
                     width: double.infinity,
@@ -386,7 +335,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(AppSpacing.sm),
                         decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHigh,
+                          color: Theme.of(context).colorScheme.surfaceContainerHigh,
                           borderRadius: BorderRadius.circular(AppRadius.sm),
                         ),
                         child: Text(_message!),
@@ -400,6 +349,178 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+/// Renders one [_SectionPanel]'s candidate list — the confirm-seed-order
+/// list, tie warnings, and tie-breaker action, unchanged from the original
+/// single-table screen except every "4"/"top 4" is now [panel.qualifyCount].
+class _SectionPanelView extends StatelessWidget {
+  final _SectionPanel panel;
+  final bool scheduling;
+  final void Function(int rowIndex) onMoveUp;
+  final void Function(int rowIndex) onMoveDown;
+  final void Function(List<StandingRow> group, int round) onScheduleTiebreaker;
+
+  const _SectionPanelView({
+    required this.panel,
+    required this.scheduling,
+    required this.onMoveUp,
+    required this.onMoveDown,
+    required this.onScheduleTiebreaker,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final candidates = panel.candidates;
+    final qualifyCount = panel.qualifyCount;
+    final chain = panel.chain;
+    final hasExtras = candidates.length > qualifyCount;
+    final hasTieWithinCutoff = candidates.take(qualifyCount).any((r) => r.tiedWithAnother);
+    final contestedGroup = chain?.contestedGroup;
+    final contestedInProgress = contestedGroup != null && chain!.contestedGroupMatches.isNotEmpty;
+    final contestStart = contestedGroup == null ? null : candidates.indexOf(contestedGroup.first);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (panel.label != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+            child: Text('Section ${panel.label}', style: textTheme.titleMedium),
+          ),
+        Text('Confirm seed order (Seed 1 vs 2, Seed 3 vs 4):', style: textTheme.titleSmall),
+        if (hasExtras)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: Text(
+              'Several teams are tied for the last spot. Schedule a tie-breaker '
+              'match below, or use the arrows to move whichever team should take '
+              'the last qualifying spot to the top of the list — anyone left below the line is out.',
+              style: TextStyle(color: AppColors.warningAmber, fontWeight: FontWeight.w600),
+            ),
+          )
+        else if (hasTieWithinCutoff)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: Text(
+              'Two or more teams above (highlighted) are dead level on points and '
+              "total score. This doesn't change who qualifies — only who plays whom "
+              'in the bracket. Use the arrows if you want to set their order, '
+              "otherwise it's fine to generate as-is.",
+              style: TextStyle(color: AppColors.warningAmber, fontWeight: FontWeight.w600),
+            ),
+          ),
+        const SizedBox(height: AppSpacing.sm + 4),
+        for (var i = 0; i < candidates.length; i++) ...[
+          if (contestStart != null && i == contestStart)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+              child: Row(
+                children: [
+                  Expanded(child: Divider(color: AppColors.warningAmber)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                    child: Text(
+                      'CONTESTING LAST SPOT',
+                      style: textTheme.labelSmall?.copyWith(color: AppColors.warningAmber, letterSpacing: 0.6),
+                    ),
+                  ),
+                  Expanded(child: Divider(color: AppColors.warningAmber)),
+                ],
+              ),
+            )
+          else if (contestStart == null && hasExtras && i == qualifyCount)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: AppSpacing.sm),
+              child: Divider(thickness: 2),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.xs + 2),
+            child: Card(
+              color: contestStart != null && i >= contestStart
+                  ? AppColors.warningAmber.withValues(alpha: 0.12)
+                  : (i >= qualifyCount
+                      ? scheme.surfaceContainerHighest
+                      : (candidates[i].tiedWithAnother
+                          ? AppColors.warningAmber.withValues(alpha: 0.12)
+                          : null)),
+              child: ListTile(
+                leading: CircleAvatar(
+                  child: Text(
+                    contestStart != null && i >= contestStart
+                        ? '—'
+                        : (i < qualifyCount ? '${i + 1}' : '—'),
+                  ),
+                ),
+                title: Text(candidates[i].teamName),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${candidates[i].points} pts · ${candidates[i].pointsScored} scored (league)'
+                      '${contestStart != null && i >= contestStart ? " — contesting" : (contestStart == null && i >= qualifyCount ? " — OUT" : "")}',
+                    ),
+                    if (chain?.lastRoundStats[candidates[i].teamId] case final tb?)
+                      Text(
+                        'Tie-breaker: ${tb.points} pts · ${tb.pointsScored} scored',
+                        style: TextStyle(color: AppColors.warningAmber),
+                      ),
+                  ],
+                ),
+                isThreeLine: chain?.lastRoundStats.containsKey(candidates[i].teamId) ?? false,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(icon: const Icon(Icons.arrow_upward), onPressed: () => onMoveUp(i)),
+                    IconButton(icon: const Icon(Icons.arrow_downward), onPressed: () => onMoveDown(i)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+        if (contestedGroup != null && !contestedInProgress)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: _TiebreakerActionCard(
+              teamNames: contestedGroup.map((r) => r.teamName).join(' vs '),
+              round: chain!.nextRound,
+              loading: scheduling,
+              onTap: scheduling ? null : () => onScheduleTiebreaker(contestedGroup, chain.nextRound),
+            ),
+          ),
+        if (contestedGroup != null && contestedInProgress)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.warningAmber.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: AppColors.warningAmber.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.hourglass_top_rounded, color: AppColors.warningAmber),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      'Tie-breaker${chain.nextRound > 1 ? ' Round ${chain.nextRound}' : ''} '
+                      'in progress for ${contestedGroup.map((r) => r.teamName).join(' vs ')} — '
+                      'enter its result in Admin > Matches, then come back here.',
+                      style: TextStyle(color: AppColors.warningAmber, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

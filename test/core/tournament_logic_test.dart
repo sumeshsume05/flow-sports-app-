@@ -10,8 +10,14 @@ import 'package:flow_sports_app/models/match.dart';
 import 'package:flow_sports_app/models/standing_row.dart';
 import 'package:flow_sports_app/models/team.dart';
 
-Team _team(String id, String name) =>
-    Team(id: id, sport: 'badminton', category: 'boys', name: name, season: '2026');
+Team _team(String id, String name, {String? section}) => Team(
+      id: id,
+      sport: 'badminton',
+      category: 'boys',
+      name: name,
+      season: '2026',
+      section: section,
+    );
 
 void main() {
   group('generateLeagueMatches', () {
@@ -38,6 +44,86 @@ void main() {
         season: '2026',
       );
       expect(matches.length, 15);
+    });
+  });
+
+  group('generateSectionedLeagueMatches', () {
+    test('teams only play others in their own section', () {
+      final teams = [
+        _team('a1', 'A1', section: 'A'),
+        _team('a2', 'A2', section: 'A'),
+        _team('a3', 'A3', section: 'A'),
+        _team('a4', 'A4', section: 'A'),
+        _team('b1', 'B1', section: 'B'),
+        _team('b2', 'B2', section: 'B'),
+        _team('b3', 'B3', section: 'B'),
+        _team('b4', 'B4', section: 'B'),
+      ];
+      final matches = generateSectionedLeagueMatches(
+        teams: teams,
+        sport: 'badminton',
+        category: 'boys',
+        season: '2026',
+      );
+      // 4 teams -> 6 pairs per section, 2 sections -> 12 total.
+      expect(matches.length, 12);
+      expect(matches.every((m) => m.section != null), isTrue);
+      for (final m in matches) {
+        final aInA = teams.firstWhere((t) => t.id == m.teamA.teamId).section;
+        final bInB = teams.firstWhere((t) => t.id == m.teamB.teamId).section;
+        expect(aInA, bInB); // never a cross-section pairing
+        expect(m.section, aInA);
+      }
+    });
+
+    test('unequal section sizes (girls: 3 + 3) still only pair within a section', () {
+      final teams = [
+        _team('a1', 'A1', section: 'A'),
+        _team('a2', 'A2', section: 'A'),
+        _team('a3', 'A3', section: 'A'),
+        _team('b1', 'B1', section: 'B'),
+        _team('b2', 'B2', section: 'B'),
+        _team('b3', 'B3', section: 'B'),
+      ];
+      final matches = generateSectionedLeagueMatches(
+        teams: teams,
+        sport: 'badminton',
+        category: 'girls',
+        season: '2026',
+      );
+      expect(matches.length, 6); // 3 pairs per section * 2 sections
+      expect(matches.where((m) => m.section == 'A').length, 3);
+      expect(matches.where((m) => m.section == 'B').length, 3);
+    });
+  });
+
+  group('candidatesForTopFour / decidingTieCluster with cutoffCount', () {
+    StandingRow row(String id, int points, int scored) {
+      final r = StandingRow(teamId: id, teamName: id);
+      r.points = points;
+      r.pointsScored = scored;
+      return r;
+    }
+
+    test('cutoffCount: 2 widens past 2 only for a genuine tie at the cutoff', () {
+      final rows = [row('a', 6, 50), row('b', 4, 40), row('c', 4, 40), row('d', 2, 20)];
+      final candidates = candidatesForTopFour(rows, cutoffCount: 2);
+      expect(candidates.map((r) => r.teamId), ['a', 'b', 'c']); // c ties b at the 2nd-place cutoff
+
+      final cluster = decidingTieCluster(candidates, cutoffCount: 2);
+      expect(cluster?.map((r) => r.teamId), ['b', 'c']);
+    });
+
+    test('cutoffCount: 2 with no tie at the cutoff returns exactly the top 2', () {
+      final rows = [row('a', 6, 50), row('b', 4, 40), row('c', 2, 20)];
+      final candidates = candidatesForTopFour(rows, cutoffCount: 2);
+      expect(candidates.map((r) => r.teamId), ['a', 'b']);
+      expect(decidingTieCluster(candidates, cutoffCount: 2), isNull);
+    });
+
+    test('default cutoffCount (4) is unchanged from before this parameter existed', () {
+      final rows = List.generate(5, (i) => row('t$i', 6 - i, 50 - i * 5));
+      expect(candidatesForTopFour(rows).length, 4);
     });
   });
 
@@ -323,6 +409,20 @@ void main() {
       expect(matches.length, 15);
       final pairs = matches.map((m) => {m.teamA.teamId, m.teamB.teamId}).toSet();
       expect(pairs.length, 15); // no duplicate or missing pairing
+    });
+
+    test('section tags the match and prefixes its matchCode/label', () {
+      final matches = generateTiebreakerMatches(
+        tiedTeams: [StandingRow(teamId: 'a', teamName: 'A'), StandingRow(teamId: 'b', teamName: 'B')],
+        sport: 'badminton',
+        category: 'boys',
+        season: '2026',
+        round: 1,
+        section: 'A',
+      );
+      expect(matches.single.section, 'A');
+      expect(matches.single.matchCode, 'A-TB1_1');
+      expect(matches.single.label, contains('Section A'));
     });
   });
 
@@ -841,8 +941,8 @@ void main() {
   });
 
   group('groupMatchesForDisplay', () {
-    Match m(MatchStage stage, int number, {int? round}) => Match(
-          id: '${stage.name}-$number-${round ?? 0}',
+    Match m(MatchStage stage, int number, {int? round, String? section}) => Match(
+          id: '${stage.name}-$number-${round ?? 0}-${section ?? ""}',
           sport: 'badminton',
           category: 'boys',
           season: '2026',
@@ -850,6 +950,7 @@ void main() {
           matchNumber: number,
           label: 'M$number',
           matchCode: '${stage.name}$number',
+          section: section,
           teamA: const TeamRef(teamId: 'a', name: 'A'),
           teamB: const TeamRef(teamId: 'b', name: 'B'),
           notifyTopic: 'badminton_boys',
@@ -892,6 +993,18 @@ void main() {
       );
       final sections = groupMatchesForDisplay([done]);
       expect(sections.single.isCompleted, isTrue);
+    });
+
+    test('a sectioned league splits into one group per section instead of one flat group', () {
+      final matches = [
+        m(MatchStage.league, 1, section: 'A'),
+        m(MatchStage.league, 2, section: 'A'),
+        m(MatchStage.league, 3, section: 'B'),
+      ];
+      final sections = groupMatchesForDisplay(matches);
+      expect(sections.map((s) => s.title).toList(), ['League — Section A', 'League — Section B']);
+      expect(sections[0].matches.length, 2);
+      expect(sections[1].matches.length, 1);
     });
   });
 

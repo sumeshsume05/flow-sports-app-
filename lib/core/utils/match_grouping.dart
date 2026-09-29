@@ -40,8 +40,20 @@ List<MatchSection> groupMatchesForDisplay(List<Match> matches) {
 
   final league = matches.where((m) => m.stage == MatchStage.league).toList()
     ..sort((a, b) => a.matchNumber.compareTo(b.matchNumber));
-  if (league.isNotEmpty) {
-    sections.add(MatchSection(title: 'League (Round 1)', matches: league));
+  final leagueSections = league.map((m) => m.section).whereType<String>().toSet().toList()..sort();
+  if (leagueSections.isEmpty) {
+    if (league.isNotEmpty) {
+      sections.add(MatchSection(title: 'League (Round 1)', matches: league));
+    }
+  } else {
+    // Sectioned league: split into one group per section so the list reads
+    // as two parallel leagues rather than one confusingly-ordered list.
+    for (final s in leagueSections) {
+      sections.add(MatchSection(
+        title: 'League — Section $s',
+        matches: league.where((m) => m.section == s).toList(),
+      ));
+    }
   }
 
   return sections;

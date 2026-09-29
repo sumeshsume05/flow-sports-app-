@@ -89,6 +89,76 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
     }
   }
 
+  static const _sectionOptions = ['None', 'A', 'B', 'C', 'D'];
+
+  /// Suggests a balanced split, alternating teams (in their current list
+  /// order) A, B, A, B, ... across [sectionCount] sections — a starting
+  /// point, not a final decision: the admin can still tap any team's chip
+  /// afterward to move it to a different section by hand.
+  Future<void> _autoArrangeDialog(List<Team> teams) async {
+    final sectionCount = await showDialog<int>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Auto-arrange into sections'),
+        children: [
+          for (final n in [2, 3, 4])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, n),
+              child: Text('$n sections'),
+            ),
+        ],
+      ),
+    );
+    if (sectionCount == null) return;
+
+    final letters = List.generate(sectionCount, (i) => String.fromCharCode(65 + i)); // A, B, C, ...
+    try {
+      await Future.wait([
+        for (var i = 0; i < teams.length; i++)
+          _firestoreService.updateTeamSection(teams[i].id, letters[i % sectionCount]),
+      ]);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'Arranged ${teams.length} teams into $sectionCount sections — tap any team to move it.'),
+        ));
+      }
+    } catch (e) {
+      _showWriteError(e);
+    }
+  }
+
+  Future<void> _pickSectionDialog(Team team) async {
+    final section = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('League Section'),
+        children: [
+          for (final option in _sectionOptions)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, option == 'None' ? '' : option),
+              child: Row(
+                children: [
+                  if ((team.section ?? 'None') == option)
+                    const Padding(
+                      padding: EdgeInsets.only(right: AppSpacing.sm),
+                      child: Icon(Icons.check, size: 18),
+                    ),
+                  Text(option == 'None' ? 'None (single round-robin)' : 'Section $option'),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (section == null) return;
+    try {
+      await _firestoreService.updateTeamSection(team.id, section.isEmpty ? null : section);
+    } catch (e) {
+      _showWriteError(e);
+    }
+  }
+
   Future<void> _confirmDelete(Team team) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -139,9 +209,19 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
           }
           return ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
-            itemCount: teams.length,
+            itemCount: teams.length + 1,
             itemBuilder: (context, i) {
-              final team = teams[i];
+              if (i == 0) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text('Auto-arrange into sections'),
+                    onPressed: () => _autoArrangeDialog(teams),
+                  ),
+                );
+              }
+              final team = teams[i - 1];
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 2),
                 child: Container(
@@ -150,6 +230,11 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
                     borderRadius: BorderRadius.circular(AppRadius.sm),
                   ),
                   child: ListTile(
+                    leading: ActionChip(
+                      label: Text(team.section ?? '—'),
+                      onPressed: () => _pickSectionDialog(team),
+                      tooltip: 'Set league section',
+                    ),
                     title: Text(team.name),
                     subtitle: team.seed != null ? Text('Seed ${team.seed}') : null,
                     onTap: () => _editTeamDialog(team),
