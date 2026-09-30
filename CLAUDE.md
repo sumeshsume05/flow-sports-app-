@@ -75,11 +75,23 @@ its own subsection below rather than folding it into badminton's rules.
   pts, tie = 1 pt, loss = 0. Ranked by points, then total points scored
   (own game score summed across matches) as the tiebreaker — same role as
   goal difference/run rate elsewhere.
-- **Qualifying for the knockout stage**: top 4 by that ranking. A genuine
-  tie (same points *and* same points scored) at or around the 4th-place
-  cutoff triggers a tie-breaker match between just the tied teams
-  (`resolveTieChain`) rather than being guessed — can chain into further
-  rounds if still tied after one.
+- **League format — flat or sectioned** (admin's choice, driven purely by
+  whether teams have a `section` assigned in Admin > Teams — no separate
+  toggle): either one flat round-robin table (`generateLeagueMatches`), or
+  teams split into league sections (e.g. Section A/B) that only play
+  round-robin *within* their own section (`generateSectionedLeagueMatches`,
+  `Team.section`/`Match.section`). Sectioned mode is currently fixed at
+  exactly 2 sections, 2 qualifiers each, to fit the bracket below — see
+  "Planned changes" for lifting that fixed shape.
+- **Qualifying for the knockout stage**: top 4 by that ranking (flat mode),
+  or each section's top 2 combined (sectioned mode — seeded as Section A's
+  #1 vs Section B's #1, Section A's #2 vs Section B's #2, so KO1/KO2 never
+  pit two teams from the same section against each other). A genuine tie
+  (same points *and* same points scored) at the cutoff — the 4th-place
+  cutoff in flat mode, the 2nd-place cutoff within each section in
+  sectioned mode — triggers a tie-breaker match between just the tied
+  teams (`resolveTieChain`, generalized via `cutoffCount`) rather than
+  being guessed — can chain into further rounds if still tied after one.
 - **Knockout bracket** (`lib/core/utils/bracket_resolver.dart`) — a fixed
   4-team "page playoff", not a generic bracket generator:
   - KO1: Seed 1 vs Seed 2 → winner goes **straight to the Final**
@@ -95,25 +107,33 @@ its own subsection below rather than folding it into badminton's rules.
   throw/return-undecided rather than silently treating "not team A" as
   "team B won."
 
-#### Planned changes (not yet implemented, as of 2026-09-29)
+#### Planned changes (beyond what's shipped, as of 2026-09-30)
 
-The goal is a configurable tournament engine, not hardcoded badminton
-rules: admins define a tournament's sections, qualification rules,
-bracket shape, tie-breakers, and stages through configuration, per
-sport — not through code changes per format. This applies to every
-sport the app ever supports, not just badminton.
+**Shipped** (2026-09-30): the "sections feed one shared knockout" format
+described above — exactly 2 sections, 2 qualifiers each, admin assigns
+teams to sections, schedule/standings/bracket all became section-aware.
+This was the PRD's "Example Format 1"; Format 2 (sections resolve fully
+independently, no shared knockout) is **not** built.
 
-Full detail — including two concrete worked example formats (sections
-feeding one shared knockout vs. sections resolving independently), the
-complete list of dimensions to make configurable, a 4-phase suggested
-roadmap diagram, and an architecture sketch — lives in the "Future
-Adaptation Plan" section of the FLOW Arena PRD linked at the top of
-this file. This note is intentionally a summary, not a duplicate —
-treat the PRD as the source of truth for this plan, since it's a
-living doc the user may keep editing.
+**Still not built** — the goal remains a fully configurable tournament
+engine, not hardcoded badminton rules: admins define a tournament's
+sections, qualification rules, bracket shape, tie-breakers, and stages
+through configuration, per sport — not through code changes per format.
+Concretely, still missing:
+- Any section count/qualifier count other than the fixed "2 sections,
+  2 each" shape (needed to fit the still-fixed 4-team bracket)
+- Format 2 (sections resolving fully independently — no shared knockout)
+- Alternate league scheduling (admin manually schedules matches / the
+  system allocates them) as an alternative to round-robin
+- A flexible stage/round sequence beyond the fixed KO1/KO2/KO3/KOF codes
+- Any sport other than badminton
 
-None of this is designed or built yet — treat it as direction, not a
-spec, until the user works through the actual design with Claude.
+Full detail — including the worked example formats, the complete list of
+dimensions to make configurable, a 4-phase suggested roadmap diagram, and
+an architecture sketch — lives in the "Future Adaptation Plan" section of
+the FLOW Arena PRD linked at the top of this file. This note is
+intentionally a summary, not a duplicate — treat the PRD as the source of
+truth for this plan, since it's a living doc the user may keep editing.
 
 ## Firestore rules
 
@@ -121,6 +141,22 @@ Deploy with `firebase deploy --only firestore:rules --project
 flow-sports-2026` (add `,firestore:indexes` when indexes changed too).
 Admin-only writes on match/team/season data; viewers can only write their
 own reaction, prediction, or chat message — never arbitrary fields.
+
+**Config-doc pattern** (`config/{docId}`, public read + admin-only write):
+used for both the chat on/off toggle (`config/chatSettings`) and the
+Home-screen announcement (`config/announcement`) — reuse this same shape
+for any future single-value admin setting rather than inventing a new one.
+
+**No analytics SDK — a custom `presence` collection instead.** Admin's
+install/active-now counts (`admin_dashboard_screen.dart`) are *not* backed
+by `firebase_analytics` (not a dependency, deliberately) — they're backed
+by a lightweight `presence/{deviceId}` collection (doc id = the same
+locally-generated device id already used for chat identity), written via
+a fire-and-forget register-or-heartbeat call in `app.dart`, and read via
+cheap Firestore `.count()` aggregation queries, admin-only. Don't suggest
+adding an analytics package for usage-tracking asks — this pattern already
+covers it and keeps everything inside the existing Firestore/Spark-plan
+architecture.
 
 ## Git workflow (strict — follow exactly)
 
