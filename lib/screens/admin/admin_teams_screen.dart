@@ -89,38 +89,26 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
     }
   }
 
-  static const _sectionOptions = ['None', 'A', 'B', 'C', 'D'];
+  static const _sectionOptions = ['None', 'A', 'B'];
 
-  /// Suggests a balanced split, alternating teams (in their current list
-  /// order) A, B, A, B, ... across [sectionCount] sections — a starting
-  /// point, not a final decision: the admin can still tap any team's chip
-  /// afterward to move it to a different section by hand.
+  /// Suggests a balanced 2-way split, alternating teams (in their current
+  /// list order) A, B, A, B, ... — a starting point, not a final decision:
+  /// the admin can still tap any team's chip afterward to move it to a
+  /// different section by hand. Fixed at exactly 2 sections because that's
+  /// all Generate Bracket currently supports (it feeds each section's top
+  /// 2 into the existing 4-team knockout) — see CLAUDE.md's "Planned
+  /// changes" for lifting that fixed shape.
   Future<void> _autoArrangeDialog(List<Team> teams) async {
-    final sectionCount = await showDialog<int>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Auto-arrange into sections'),
-        children: [
-          for (final n in [2, 3, 4])
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, n),
-              child: Text('$n sections'),
-            ),
-        ],
-      ),
-    );
-    if (sectionCount == null) return;
-
-    final letters = List.generate(sectionCount, (i) => String.fromCharCode(65 + i)); // A, B, C, ...
+    const letters = ['A', 'B'];
     try {
       await Future.wait([
         for (var i = 0; i < teams.length; i++)
-          _firestoreService.updateTeamSection(teams[i].id, letters[i % sectionCount]),
+          _firestoreService.updateTeamSection(teams[i].id, letters[i % letters.length]),
       ]);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Arranged ${teams.length} teams into $sectionCount sections — tap any team to move it.'),
+          content:
+              Text('Arranged ${teams.length} teams into 2 sections — tap any team to move it.'),
         ));
       }
     } catch (e) {
