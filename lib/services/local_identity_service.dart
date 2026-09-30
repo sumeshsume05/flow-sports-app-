@@ -12,6 +12,7 @@ class LocalIdentityService {
   static const _displayNameKey = 'chat_display_name';
   static const _lastSentAtKey = 'chat_last_sent_at_ms';
   static const _lastReadAtKey = 'chat_last_read_at_ms';
+  static const _presenceRegisteredKey = 'presence_registered';
   static const minSendGap = Duration(seconds: 3);
 
   Future<String> getOrCreateDeviceId() async {
@@ -59,6 +60,22 @@ class LocalIdentityService {
   Future<void> markReadNow() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(_lastReadAtKey, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  /// Whether this device's initial `presence` doc (firstSeenAt) has ever
+  /// been written successfully. Only set true *after* that write actually
+  /// succeeds (see [FirestoreService.registerPresence] call site in
+  /// app.dart) — setting it optimistically would permanently strand a
+  /// device that happened to be offline on its very first launch, since
+  /// every later call would try to `update()` a doc that was never created.
+  Future<bool> isPresenceRegistered() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_presenceRegisteredKey) ?? false;
+  }
+
+  Future<void> markPresenceRegistered() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_presenceRegisteredKey, true);
   }
 
   String _randomId() {

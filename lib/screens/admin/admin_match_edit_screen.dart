@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/constants.dart';
 import '../../core/design/app_colors.dart';
@@ -61,6 +62,49 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
     });
     try {
       await _firestoreService.setMatchStatus(widget.matchId, status);
+    } on FirestoreWriteException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _pickSchedule(Match match) async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: match.scheduledAt ?? now,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 1),
+    );
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(match.scheduledAt ?? now),
+    );
+    if (time == null) return;
+    final scheduledAt = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await _firestoreService.setMatchSchedule(widget.matchId, scheduledAt);
+    } on FirestoreWriteException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _clearSchedule() async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await _firestoreService.setMatchSchedule(widget.matchId, null);
     } on FirestoreWriteException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
@@ -340,6 +384,34 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
                     'before a result can be entered here.',
                   ),
                 ),
+              const Divider(height: AppSpacing.xl * 1.5),
+              Text('Schedule', style: textTheme.titleMedium),
+              Text(
+                'Optional — shown on the match list once set. Can be changed or cleared any time.',
+                style: textTheme.bodySmall,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      match.scheduledAt == null
+                          ? 'Not scheduled'
+                          : DateFormat('MMM d, y — h:mm a').format(match.scheduledAt!),
+                      style: textTheme.bodyMedium,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _saving ? null : () => _pickSchedule(match),
+                    child: Text(match.scheduledAt == null ? 'Set' : 'Change'),
+                  ),
+                  if (match.scheduledAt != null)
+                    TextButton(
+                      onPressed: _saving ? null : _clearSchedule,
+                      child: const Text('Clear'),
+                    ),
+                ],
+              ),
               const Divider(height: AppSpacing.xl * 1.5),
               Text('Venue details', style: textTheme.titleMedium),
               Text('Optional — helps players find the right court.', style: textTheme.bodySmall),

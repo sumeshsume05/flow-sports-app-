@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../core/design/app_colors.dart';
@@ -8,6 +9,7 @@ import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
+import '../../state/announcement_state.dart';
 
 class HomeScreen extends StatelessWidget {
   final String season;
@@ -18,6 +20,7 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final announcement = context.watch<AnnouncementState>().text;
 
     return Scaffold(
       appBar: AppBar(
@@ -62,6 +65,28 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
           ).animate().fadeIn(duration: 300.ms).slideY(begin: -0.05, end: 0),
+          if (announcement.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(AppSpacing.md),
+              decoration: BoxDecoration(
+                color: AppColors.warningAmber.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+                border: Border.all(color: AppColors.warningAmber.withValues(alpha: 0.4)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.campaign_outlined, color: AppColors.warningAmber),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(announcement, style: textTheme.bodyMedium),
+                  ),
+                ],
+              ),
+            ).animate().fadeIn(duration: 300.ms).slideY(begin: -0.05, end: 0),
+          ],
           const SizedBox(height: AppSpacing.lg),
           Text('Badminton', style: textTheme.titleLarge),
           const SizedBox(height: AppSpacing.sm),

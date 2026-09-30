@@ -281,6 +281,71 @@ class FirestoreService {
     }
   }
 
+  /// [scheduledAt] is null to clear/cancel a previously set date & time.
+  Future<void> setMatchSchedule(String matchId, DateTime? scheduledAt) async {
+    try {
+      await _db.collection(matchesCollection).doc(matchId).update({
+        'scheduledAt': scheduledAt == null ? null : Timestamp.fromDate(scheduledAt),
+      });
+    } catch (e) {
+      throw FirestoreWriteException('Could not update the match schedule.', e);
+    }
+  }
+
+  // --- Presence (admin install/active-now counts) ---
+
+  /// One-time write for a device's very first ever app open — sets both
+  /// `firstSeenAt` and `lastSeenAt` in a single atomic write, so there's no
+  /// window where the doc exists with only one of them. Safe to retry (same
+  /// doc id every time): a retry just means `firstSeenAt` ends up slightly
+  /// later than the true first launch, never a duplicate or a race.
+  Future<void> registerPresence({required String deviceId, required int appVersion}) async {
+    try {
+      await _db.collection(presenceCollection).doc(deviceId).set({
+        'deviceId': deviceId,
+        'firstSeenAt': FieldValue.serverTimestamp(),
+        'lastSeenAt': FieldValue.serverTimestamp(),
+        'appVersion': appVersion,
+      });
+    } catch (e) {
+      throw FirestoreWriteException('Could not register presence.', e);
+    }
+  }
+
+  /// Called on every later app open/resume — only touches `lastSeenAt` (and
+  /// `appVersion`, in case the device updated since its last heartbeat).
+  /// Requires the doc to already exist (see [registerPresence]); the rules
+  /// deny an update against a nonexistent doc, same as any other update.
+  Future<void> heartbeat({required String deviceId, required int appVersion}) async {
+    try {
+      await _db.collection(presenceCollection).doc(deviceId).update({
+        'lastSeenAt': FieldValue.serverTimestamp(),
+        'appVersion': appVersion,
+      });
+    } catch (e) {
+      throw FirestoreWriteException('Could not update presence.', e);
+    }
+  }
+
+  /// Total unique devices that have ever opened the app at least once —
+  /// this can only grow, since there's no way to detect an uninstall.
+  Future<int> fetchInstallCount() async {
+    final result = await _db.collection(presenceCollection).count().get();
+    return result.count ?? 0;
+  }
+
+  /// Devices whose most recent heartbeat (app open/resume) was within
+  /// [window] of now — a rough proxy for "using the app right now."
+  Future<int> fetchActiveCount({Duration window = const Duration(minutes: 5)}) async {
+    final cutoff = Timestamp.fromDate(DateTime.now().subtract(window));
+    final result = await _db
+        .collection(presenceCollection)
+        .where('lastSeenAt', isGreaterThan: cutoff)
+        .count()
+        .get();
+    return result.count ?? 0;
+  }
+
   // --- Seasons ---
 
   /// A fresh Firestore-generated id for a new season doc, without a network
@@ -324,6 +389,18 @@ class FirestoreService {
       await _db.collection(configCollection).doc('chatSettings').set({'enabled': enabled});
     } catch (e) {
       throw FirestoreWriteException('Could not update chat settings.', e);
+    }
+  }
+
+  /// [text] empty clears the Home-screen announcement.
+  Future<void> setAnnouncement(String text) async {
+    try {
+      await _db.collection(configCollection).doc('announcement').set({
+        'text': text,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      throw FirestoreWriteException('Could not update the announcement.', e);
     }
   }
 

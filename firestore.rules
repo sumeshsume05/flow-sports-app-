@@ -103,5 +103,20 @@ service cloud.firestore {
       // Messages are immutable to viewers once posted; admin can moderate.
       allow update, delete: if isAdmin();
     }
+
+    // One doc per device (doc id = the device's own locally-generated,
+    // persisted id — see LocalIdentityService), used only to give the
+    // admin a rough install/active-now count. No auth required to write
+    // (same trust level as reactions/chat), but only admin can read —
+    // there's no reason to expose the raw device list to viewers.
+    match /presence/{deviceId} {
+      allow read: if isAdmin();
+      allow create: if request.resource.data.deviceId == deviceId &&
+        request.resource.data.firstSeenAt == request.time &&
+        request.resource.data.lastSeenAt == request.time;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSeenAt', 'appVersion']) &&
+        request.resource.data.lastSeenAt == request.time;
+      allow delete: if false;
+    }
   }
 }
