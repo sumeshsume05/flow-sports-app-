@@ -29,6 +29,7 @@ const adminsCollection = 'admins';
 const configCollection = 'config';
 const seasonsCollection = 'seasons';
 const chatMessagesCollection = 'chatMessages';
+const presenceCollection = 'presence';
 
 /// Bounds the live chat query so reads stay cheap regardless of how many
 /// messages accumulate over the event.

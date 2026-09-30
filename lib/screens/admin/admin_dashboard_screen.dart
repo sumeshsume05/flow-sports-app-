@@ -13,6 +13,7 @@ import '../../core/design/app_spacing.dart';
 import '../../core/utils/match_export.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
+import '../../state/announcement_state.dart';
 import '../../state/auth_state.dart';
 import '../../state/chat_settings_state.dart';
 import '../../state/season_state.dart';
@@ -30,6 +31,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _seeding = false;
   String? _seedMessage;
   String? _busySport;
+
+  bool _loadingUsage = false;
+  int? _installCount;
+  int? _activeCount;
+  String? _usageError;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshUsageStats();
+  }
+
+  Future<void> _refreshUsageStats() async {
+    setState(() {
+      _loadingUsage = true;
+      _usageError = null;
+    });
+    try {
+      final installs = await _firestoreService.fetchInstallCount();
+      final active = await _firestoreService.fetchActiveCount();
+      if (mounted) {
+        setState(() {
+          _installCount = installs;
+          _activeCount = active;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _usageError = '$e');
+    } finally {
+      if (mounted) setState(() => _loadingUsage = false);
+    }
+  }
 
   Future<void> _seedInitialData(String season) async {
     setState(() {
@@ -159,6 +192,34 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  Future<void> _showAnnouncementDialog(String current) async {
+    final controller = TextEditingController(text: current);
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Home Screen Announcement'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'e.g. Matches start at 9am tomorrow, Court 2',
+          ),
+          maxLines: 4,
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+        ],
+      ),
+    );
+    if (result != true) return;
+    try {
+      await _firestoreService.setAnnouncement(controller.text.trim());
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -220,6 +281,71 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     ),
                     value: context.watch<ChatSettingsState>().chatEnabled,
                     onChanged: _setChatEnabled,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Builder(builder: (context) {
+                  final announcement = context.watch<AnnouncementState>().text;
+                  return Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.campaign_outlined),
+                      title: const Text('Home Screen Announcement'),
+                      subtitle: Text(
+                        announcement.isEmpty ? 'None set' : announcement,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      trailing: TextButton(
+                        onPressed: () => _showAnnouncementDialog(announcement),
+                        child: Text(announcement.isEmpty ? 'Set' : 'Edit'),
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: AppSpacing.sm),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(AppSpacing.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.insights_outlined),
+                            const SizedBox(width: AppSpacing.sm),
+                            Text('App Usage', style: textTheme.titleMedium),
+                            const Spacer(),
+                            IconButton(
+                              icon: _loadingUsage
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.refresh),
+                              onPressed: _loadingUsage ? null : _refreshUsageStats,
+                              tooltip: 'Refresh',
+                            ),
+                          ],
+                        ),
+                        if (_usageError != null)
+                          Text(_usageError!, style: TextStyle(color: scheme.error))
+                        else ...[
+                          Text(
+                            '${_installCount ?? "—"} installs (all-time) '
+                            '· ${_activeCount ?? "—"} active in the last 5 minutes',
+                            style: textTheme.bodyMedium,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Installs = unique devices that have ever opened the app at least '
+                            "once (this can only grow — there's no way to detect an uninstall). "
+                            'Includes your own admin/test devices.',
+                            style: textTheme.bodySmall,
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),

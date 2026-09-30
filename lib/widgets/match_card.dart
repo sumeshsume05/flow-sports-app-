@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../core/design/app_colors.dart';
 import '../core/design/app_radius.dart';
@@ -69,6 +70,15 @@ class MatchCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    if (match.scheduledAt != null) ...[
+                      const SizedBox(width: AppSpacing.xs),
+                      Text(
+                        DateFormat('MMM d, h:mm a').format(match.scheduledAt!),
+                        style: textTheme.labelSmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                     const SizedBox(width: AppSpacing.sm),
                     StatusBadge(status: match.status),
                     if (trailing != null) ...[const SizedBox(width: AppSpacing.sm), trailing!],
