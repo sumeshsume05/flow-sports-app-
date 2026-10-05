@@ -59,6 +59,37 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
   /// case stays fixed at 2 sections x 2 qualifiers each).
   int _flatQualifyCount = 4;
 
+  /// Final format — orthogonal to qualifier count/sectioning, applies either
+  /// way. Admin-chosen at generation time; baked into which Final matches
+  /// get created (see bracket_resolver.dart's _finalGames).
+  bool _bestOfThreeFinal = false;
+
+  /// Existing knockout matches for this category/season, refreshed on every
+  /// [_load] — used only to detect whether a best-of-3 Final has split 1-1
+  /// and needs its decider (Game 3) scheduled (see [_needsFinalGame3]).
+  /// Unrelated to [_panels], which drive bracket *generation*, not matches
+  /// that already exist.
+  List<Match> _knockoutMatches = [];
+  bool _schedulingGame3 = false;
+
+  Match? _byCode(String code) {
+    for (final m in _knockoutMatches) {
+      if (m.matchCode == code) return m;
+    }
+    return null;
+  }
+
+  bool get _needsFinalGame3 {
+    final kof1 = _byCode('KOF1');
+    final kof2 = _byCode('KOF2');
+    if (kof1 == null || kof2 == null || _byCode('KOF3') != null) return false;
+    bool decided(Match m) => m.result != null && m.result != MatchResult.tie;
+    if (!decided(kof1) || !decided(kof2)) return false;
+    final aWins = [kof1, kof2].where((m) => m.result == MatchResult.teamA).length;
+    final bWins = [kof1, kof2].where((m) => m.result == MatchResult.teamB).length;
+    return aWins == 1 && bWins == 1;
+  }
+
   _SectionPanel _buildPanel({
     required String? label,
     required String? section,
@@ -108,6 +139,12 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
       season: widget.season,
       stage: 'tiebreaker',
     );
+    final knockoutMatches = await _firestoreService.fetchMatches(
+      sport: Sport.badminton,
+      category: widget.category,
+      season: widget.season,
+      stage: 'knockout',
+    );
 
     final withSection = teams.where((t) => t.section != null).length;
     final sectioned = withSection > 0 && withSection == teams.length;
@@ -140,7 +177,10 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
     }
 
     if (mounted) {
-      setState(() => _panels = panels);
+      setState(() {
+        _panels = panels;
+        _knockoutMatches = knockoutMatches;
+      });
     }
   }
 
@@ -199,6 +239,36 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
       setState(() => _message = '$e');
     } finally {
       if (mounted) setState(() => _schedulingIndexes.remove(panelIndex));
+    }
+  }
+
+  /// Schedules the Final's decider (Game 3) once a best-of-3 Final splits
+  /// 1-1 — mirrors [_scheduleTiebreaker]'s "admin explicitly schedules one
+  /// more match" pattern. Teams are read directly off the already-completed
+  /// KOF1 (teamA/teamB are identical across the whole series by
+  /// construction — see bracket_resolver.dart's _finalGames).
+  Future<void> _scheduleFinalGame3() async {
+    final kof1 = _byCode('KOF1');
+    if (kof1 == null) return;
+    setState(() => _schedulingGame3 = true);
+    try {
+      final matchNumber =
+          _knockoutMatches.map((m) => m.matchNumber).reduce((a, b) => a > b ? a : b) + 1;
+      final game3 = generateFinalGame3(
+        teamA: kof1.teamA,
+        teamB: kof1.teamB,
+        sport: Sport.badminton,
+        category: widget.category,
+        season: widget.season,
+        matchNumber: matchNumber,
+      );
+      await _firestoreService.addMatchesBatch([game3]);
+      _message = 'Decider (Game 3) scheduled — enter its result in Admin > Matches once played.';
+      await _load();
+    } catch (e) {
+      setState(() => _message = '$e');
+    } finally {
+      if (mounted) setState(() => _schedulingGame3 = false);
     }
   }
 
@@ -283,11 +353,23 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
         final seeds = panels[0].candidates.take(panels[0].qualifyCount).toList();
         matches = switch (panels[0].qualifyCount) {
           2 => generateKnockoutMatchesForTwo(
-              twoSeeds: seeds, sport: Sport.badminton, category: widget.category, season: widget.season),
+              twoSeeds: seeds,
+              sport: Sport.badminton,
+              category: widget.category,
+              season: widget.season,
+              bestOfThreeFinal: _bestOfThreeFinal),
           3 => generateKnockoutMatchesForThree(
-              threeSeeds: seeds, sport: Sport.badminton, category: widget.category, season: widget.season),
+              threeSeeds: seeds,
+              sport: Sport.badminton,
+              category: widget.category,
+              season: widget.season,
+              bestOfThreeFinal: _bestOfThreeFinal),
           _ => generateKnockoutMatches(
-              top4Seeds: seeds, sport: Sport.badminton, category: widget.category, season: widget.season),
+              top4Seeds: seeds,
+              sport: Sport.badminton,
+              category: widget.category,
+              season: widget.season,
+              bestOfThreeFinal: _bestOfThreeFinal),
         };
       } else {
         // Sectioned (always exactly 2 sections, 2 qualifiers each, guarded
@@ -306,6 +388,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
           sport: Sport.badminton,
           category: widget.category,
           season: widget.season,
+          bestOfThreeFinal: _bestOfThreeFinal,
         );
       }
       await _firestoreService.addMatchesBatch(matches);
@@ -352,6 +435,22 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
                     ),
                     const SizedBox(height: AppSpacing.lg),
                   ],
+                  Text('Final format', style: textTheme.titleSmall),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Best of 3 plays the Final as up to 3 separate matches — whoever wins 2 is champion.',
+                    style: textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: false, label: Text('Single')),
+                      ButtonSegment(value: true, label: Text('Best of 3')),
+                    ],
+                    selected: {_bestOfThreeFinal},
+                    onSelectionChanged: (selection) => setState(() => _bestOfThreeFinal = selection.first),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
                   for (var p = 0; p < panels.length; p++) ...[
                     _SectionPanelView(
                       panel: panels[p],
@@ -387,6 +486,15 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
                           borderRadius: BorderRadius.circular(AppRadius.sm),
                         ),
                         child: Text(_message!),
+                      ),
+                    ),
+                  if (_needsFinalGame3)
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.md),
+                      child: _DeciderActionCard(
+                        teamNames: '${_byCode('KOF1')!.teamA.name} vs ${_byCode('KOF1')!.teamB.name}',
+                        loading: _schedulingGame3,
+                        onTap: _schedulingGame3 ? null : _scheduleFinalGame3,
                       ),
                     ),
                   const SizedBox(height: AppSpacing.lg),
@@ -573,6 +681,70 @@ class _SectionPanelView extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Same card treatment as [_TiebreakerActionCard] below, for the other
+/// on-demand extra match this screen can schedule: a best-of-3 Final's
+/// decider (Game 3), shown only once Games 1 and 2 have split 1-1 (see
+/// [_GenerateBracketScreenState._needsFinalGame3]).
+class _DeciderActionCard extends StatelessWidget {
+  final String teamNames;
+  final bool loading;
+  final VoidCallback? onTap;
+
+  const _DeciderActionCard({required this.teamNames, required this.loading, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Material(
+      color: AppColors.warningAmber.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: AppColors.warningAmber.withValues(alpha: 0.2),
+                child: const Icon(Icons.sports_tennis, color: AppColors.warningAmber),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Schedule Decider — Game 3',
+                      style: textTheme.titleSmall
+                          ?.copyWith(color: AppColors.warningAmber, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(teamNames, style: textTheme.bodySmall),
+                    const SizedBox(height: 2),
+                    Text(
+                      'The Final split 1-1 — these teams play a decider.',
+                      style: textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+                    ),
+                  ],
+                ),
+              ),
+              if (loading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.warningAmber),
+                )
+              else
+                const Icon(Icons.chevron_right, color: AppColors.warningAmber),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
