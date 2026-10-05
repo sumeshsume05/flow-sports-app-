@@ -13,12 +13,13 @@ import '../../models/standing_row.dart';
 import '../../models/team.dart';
 import '../../services/firestore_service.dart';
 
-/// One qualification group feeding the (always exactly 4-team) knockout
-/// bracket: either the whole category (non-sectioned — [label] is null,
-/// [qualifyCount] is 4), or one league section (sectioned — [label] is the
-/// section name, e.g. 'A', [qualifyCount] is 2). Mutable so the admin's
-/// manual reorder (move up/down) can update it in place with setState,
-/// without a full reload.
+/// One qualification group feeding the knockout bracket: either the whole
+/// category (non-sectioned — [label] is null, [qualifyCount] is whatever
+/// the admin picked: 2, 3, or 4 — see [_GenerateBracketScreenState._flatQualifyCount]),
+/// or one league section (sectioned — [label] is the section name, e.g.
+/// 'A', [qualifyCount] fixed at 2). Mutable so the admin's manual reorder
+/// (move up/down) can update it in place with setState, without a full
+/// reload.
 class _SectionPanel {
   final String? label;
   final String? section;
@@ -51,6 +52,12 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
   final Set<int> _schedulingIndexes = {};
   bool _generating = false;
   String? _message;
+
+  /// Qualifier count for the non-sectioned (flat league table) case only —
+  /// admin-chosen (2, 3, or 4), defaulting to 4 so nothing changes unless
+  /// they pick differently. Irrelevant once a category is sectioned (that
+  /// case stays fixed at 2 sections x 2 qualifiers each).
+  int _flatQualifyCount = 4;
 
   _SectionPanel _buildPanel({
     required String? label,
@@ -111,7 +118,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
         _buildPanel(
           label: null,
           section: null,
-          qualifyCount: 4,
+          qualifyCount: _flatQualifyCount,
           teams: teams,
           leagueMatches: leagueMatches,
           tiebreakerMatches: tiebreakerMatches,
@@ -141,6 +148,15 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  Future<void> _setFlatQualifyCount(int n) async {
+    if (_flatQualifyCount == n) return;
+    setState(() {
+      _flatQualifyCount = n;
+      _panels = null; // show the loading spinner while candidates recompute
+    });
+    await _load();
   }
 
   void _moveUp(int panelIndex, int rowIndex) {
@@ -261,26 +277,37 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
         return;
       }
 
-      // Non-sectioned: straight top 4. Sectioned (always exactly 2 sections,
-      // 2 qualifiers each, guarded above): seed 1 = Section A's 1st, seed 2 =
-      // Section B's 1st, seed 3 = Section A's 2nd, seed 4 = Section B's 2nd —
-      // so KO1 and KO2 each pit different sections against each other rather
-      // than a same-section rematch in the very first knockout round.
-      final top4Seeds = panels.length == 1
-          ? panels[0].candidates.take(4).toList()
-          : [
-              panels[0].candidates[0],
-              panels[1].candidates[0],
-              panels[0].candidates[1],
-              panels[1].candidates[1],
-            ];
-
-      final matches = generateKnockoutMatches(
-        top4Seeds: top4Seeds,
-        sport: Sport.badminton,
-        category: widget.category,
-        season: widget.season,
-      );
+      List<Match> matches;
+      if (panels.length == 1) {
+        // Non-sectioned: admin-chosen qualifier count decides the shape.
+        final seeds = panels[0].candidates.take(panels[0].qualifyCount).toList();
+        matches = switch (panels[0].qualifyCount) {
+          2 => generateKnockoutMatchesForTwo(
+              twoSeeds: seeds, sport: Sport.badminton, category: widget.category, season: widget.season),
+          3 => generateKnockoutMatchesForThree(
+              threeSeeds: seeds, sport: Sport.badminton, category: widget.category, season: widget.season),
+          _ => generateKnockoutMatches(
+              top4Seeds: seeds, sport: Sport.badminton, category: widget.category, season: widget.season),
+        };
+      } else {
+        // Sectioned (always exactly 2 sections, 2 qualifiers each, guarded
+        // above): seed 1 = Section A's 1st, seed 2 = Section B's 1st, seed 3
+        // = Section A's 2nd, seed 4 = Section B's 2nd — so KO1 and KO2 each
+        // pit different sections against each other rather than a
+        // same-section rematch in the very first knockout round.
+        final top4Seeds = [
+          panels[0].candidates[0],
+          panels[1].candidates[0],
+          panels[0].candidates[1],
+          panels[1].candidates[1],
+        ];
+        matches = generateKnockoutMatches(
+          top4Seeds: top4Seeds,
+          sport: Sport.badminton,
+          category: widget.category,
+          season: widget.season,
+        );
+      }
       await _firestoreService.addMatchesBatch(matches);
 
       setState(() => _message = 'Knockout bracket generated! 🏆 On to the playoffs.');
@@ -294,6 +321,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
   @override
   Widget build(BuildContext context) {
     final panels = _panels;
+    final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Generate Knockout Bracket')),
@@ -304,6 +332,26 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (panels.length == 1 && panels[0].label == null) ...[
+                    Text('Teams qualifying to the knockout stage', style: textTheme.titleSmall),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                      'Pick how many teams advance — e.g. drop to 2 or 3 if a team withdrew '
+                      'and the usual top 4 no longer makes sense.',
+                      style: textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    SegmentedButton<int>(
+                      segments: const [
+                        ButtonSegment(value: 2, label: Text('2')),
+                        ButtonSegment(value: 3, label: Text('3')),
+                        ButtonSegment(value: 4, label: Text('4')),
+                      ],
+                      selected: {_flatQualifyCount},
+                      onSelectionChanged: (selection) => _setFlatQualifyCount(selection.first),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
                   for (var p = 0; p < panels.length; p++) ...[
                     _SectionPanelView(
                       panel: panels[p],
@@ -392,7 +440,11 @@ class _SectionPanelView extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: AppSpacing.xs),
             child: Text('Section ${panel.label}', style: textTheme.titleMedium),
           ),
-        Text('Confirm seed order (Seed 1 vs 2, Seed 3 vs 4):', style: textTheme.titleSmall),
+        Text('Confirm seed order ${switch (qualifyCount) {
+          2 => '(Seed 1 vs 2, straight to the Final)',
+          3 => '(Seed 1 gets a bye; Seed 2 vs 3 for the other Final spot)',
+          _ => '(Seed 1 vs 2, Seed 3 vs 4)',
+        }}:', style: textTheme.titleSmall),
         if (hasExtras)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.sm),
