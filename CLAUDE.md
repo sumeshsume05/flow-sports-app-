@@ -93,21 +93,32 @@ its own subsection below rather than folding it into badminton's rules.
   teams (`resolveTieChain`, generalized via `cutoffCount`) rather than
   being guessed — can chain into further rounds if still tied after one.
 - **Knockout bracket** (`lib/core/utils/bracket_resolver.dart`) — a fixed
-  4-team "page playoff", not a generic bracket generator:
+  4-team "page playoff", not a generic bracket generator (the qualifier
+  count feeding it is admin-configurable — 2, 3, or 4 — see below):
   - KO1: Seed 1 vs Seed 2 → winner goes **straight to the Final**
   - KO2: Seed 3 vs Seed 4 → winner advances to KO3
   - KO3: KO1's loser vs KO2's winner → winner is the Final's 2nd finalist
   - KOF (Final): KO1's winner vs KO3's winner
+- **Final format — Single or Best-of-3** (admin's choice at bracket
+  generation time, independent of qualifier count/sectioning): Single
+  generates one `KOF` match as above; Best-of-3 generates `KOF1`/`KOF2`
+  instead, sharing identical `teamASource`/`teamBSource` so the existing
+  `resolveDependentSlots` resolves both from one completed match with no
+  special-casing. If Games 1–2 split 1-1, the admin explicitly schedules a
+  decider (`KOF3`, via `generateFinalGame3`) from the same Generate Bracket
+  screen — mirrors the existing tie-breaker-scheduling action rather than
+  auto-creating it, since it's only sometimes needed.
 - **Podium** (`lib/core/utils/podium_resolver.dart`): 1st/2nd = KOF
-  winner/loser; the two semifinalists = KO2 and KO3's losers. Derived
-  entirely from the 4 knockout matches, no separate podium data.
+  winner/loser (or, for a best-of-3 Final, whoever wins 2 of
+  KOF1/KOF2/KOF3); the two semifinalists = KO2 and KO3's losers. Derived
+  entirely from the knockout matches that exist, no separate podium data.
 - **Ties are never guessed** — a knockout match can't legitimately end
   level in badminton, so the admin's score-entry screen blocks entering a
   tied result there, and both `resolveDependentSlots` and `computePodium`
   throw/return-undecided rather than silently treating "not team A" as
   "team B won."
 
-#### Planned changes (beyond what's shipped, as of 2026-09-30)
+#### Planned changes (beyond what's shipped, as of 2026-10-06)
 
 **Shipped** (2026-09-30): the "sections feed one shared knockout" format
 described above — exactly 2 sections, 2 qualifiers each, admin assigns
@@ -115,17 +126,28 @@ teams to sections, schedule/standings/bracket all became section-aware.
 This was the PRD's "Example Format 1"; Format 2 (sections resolve fully
 independently, no shared knockout) is **not** built.
 
+**Shipped** (2026-10-05, qualifier count): the flat (non-sectioned) knockout
+qualifier count is admin-configurable — 2, 3, or 4, not always 4 — via a
+picker on the Generate Bracket screen, for situations like a team
+withdrawing mid-tournament. Sectioned mode stays fixed at 2 sections x 2
+qualifiers each.
+
+**Shipped** (2026-10-06): the Final format — Single or Best-of-3 — is
+admin-configurable at bracket generation time, for both Girls and Boys,
+flat or sectioned. See "Final format" above.
+
 **Still not built** — the goal remains a fully configurable tournament
 engine, not hardcoded badminton rules: admins define a tournament's
 sections, qualification rules, bracket shape, tie-breakers, and stages
 through configuration, per sport — not through code changes per format.
 Concretely, still missing:
-- Any section count/qualifier count other than the fixed "2 sections,
-  2 each" shape (needed to fit the still-fixed 4-team bracket)
+- Any section count other than exactly 2 (needed to fit the still-fixed
+  4-team bracket)
 - Format 2 (sections resolving fully independently — no shared knockout)
 - Alternate league scheduling (admin manually schedules matches / the
   system allocates them) as an alternative to round-robin
-- A flexible stage/round sequence beyond the fixed KO1/KO2/KO3/KOF codes
+- A flexible stage/round sequence beyond the fixed KO1/KO2/KO3/KOF(1/2/3)
+  codes
 - Any sport other than badminton
 
 Full detail — including the worked example formats, the complete list of
