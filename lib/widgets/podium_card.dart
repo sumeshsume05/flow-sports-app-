@@ -46,13 +46,18 @@ class PodiumCard extends StatelessWidget {
             podium.runnerUp.name ?? 'TBD',
             style: textTheme.titleLarge?.copyWith(color: Colors.white),
           ),
-          const SizedBox(height: AppSpacing.md),
-          Text('🥉  Semifinalists', style: textTheme.labelLarge?.copyWith(color: Colors.white70)),
-          const SizedBox(height: 2),
-          Text(
-            podium.semifinalists.map((t) => t.name ?? 'TBD').join('  ·  '),
-            style: textTheme.titleMedium?.copyWith(color: Colors.white),
-          ),
+          if (podium.semifinalists.isNotEmpty) ...[
+            const SizedBox(height: AppSpacing.md),
+            Text(
+              podium.semifinalists.length == 1 ? '🥉  3rd place' : '🥉  Semifinalists',
+              style: textTheme.labelLarge?.copyWith(color: Colors.white70),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              podium.semifinalists.map((t) => t.name ?? 'TBD').join('  ·  '),
+              style: textTheme.titleMedium?.copyWith(color: Colors.white),
+            ),
+          ],
         ],
       ),
     ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.05, end: 0);

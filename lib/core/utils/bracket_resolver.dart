@@ -102,6 +102,97 @@ List<Match> generateKnockoutMatches({
   return [ko1, ko2, ko3, koFinal];
 }
 
+/// Generates a 2-team bracket — just the Final, both teams already known
+/// (no TBD slots, nothing for [resolveDependentSlots] to do here). For when
+/// the admin picks a 2-team qualifier count instead of the default 4 — see
+/// [generateKnockoutMatches]'s doc comment on why each shape gets its own
+/// function rather than one parametrized generator.
+List<Match> generateKnockoutMatchesForTwo({
+  required List<StandingRow> twoSeeds, // exactly 2, in seed order (1..2)
+  required String sport,
+  required String category,
+  required String season,
+}) {
+  assert(twoSeeds.length == 2);
+  final seed1 = twoSeeds[0];
+  final seed2 = twoSeeds[1];
+
+  final koFinal = Match(
+    id: '',
+    sport: sport,
+    category: category,
+    season: season,
+    stage: MatchStage.knockout,
+    matchNumber: 1,
+    label: 'Final',
+    matchCode: 'KOF',
+    teamA: TeamRef(teamId: seed1.teamId, name: seed1.teamName),
+    teamB: TeamRef(teamId: seed2.teamId, name: seed2.teamName),
+    teamASource: const MatchSource.seed(1),
+    teamBSource: const MatchSource.seed(2),
+    status: MatchStatus.upcoming,
+    notifyTopic: '${sport}_$category',
+  );
+
+  return [koFinal];
+}
+
+/// Generates a 3-team bracket: Seed 1 gets a bye straight to the Final;
+/// Seed 2 vs Seed 3 play a Semifinal for the other Final spot. For when the
+/// admin picks a 3-team qualifier count instead of the default 4 — see
+/// [generateKnockoutMatches]'s doc comment on why each shape gets its own
+/// function rather than one parametrized generator. Reuses
+/// [resolveDependentSlots] unchanged for the Final's TBD slot — that
+/// function is already generic over match codes, not hardcoded to KO1-KOF.
+List<Match> generateKnockoutMatchesForThree({
+  required List<StandingRow> threeSeeds, // exactly 3, in seed order (1..3)
+  required String sport,
+  required String category,
+  required String season,
+}) {
+  assert(threeSeeds.length == 3);
+  final seed1 = threeSeeds[0];
+  final seed2 = threeSeeds[1];
+  final seed3 = threeSeeds[2];
+
+  final semifinal = Match(
+    id: '',
+    sport: sport,
+    category: category,
+    season: season,
+    stage: MatchStage.knockout,
+    matchNumber: 1,
+    label: 'Semifinal',
+    matchCode: 'KO1',
+    teamA: TeamRef(teamId: seed2.teamId, name: seed2.teamName),
+    teamB: TeamRef(teamId: seed3.teamId, name: seed3.teamName),
+    teamASource: const MatchSource.seed(2),
+    teamBSource: const MatchSource.seed(3),
+    status: MatchStatus.upcoming,
+    notifyTopic: '${sport}_$category',
+  );
+
+  final koFinal = Match(
+    id: '',
+    sport: sport,
+    category: category,
+    season: season,
+    stage: MatchStage.knockout,
+    matchNumber: 2,
+    label: 'Final',
+    matchCode: 'KOF',
+    // Seed 1 has a bye — known directly, not a TBD slot.
+    teamA: TeamRef(teamId: seed1.teamId, name: seed1.teamName),
+    teamB: TeamRef.tbd,
+    teamASource: const MatchSource.seed(1),
+    teamBSource: const MatchSource.winnerOf('KO1'),
+    status: MatchStatus.upcoming,
+    notifyTopic: '${sport}_$category',
+  );
+
+  return [semifinal, koFinal];
+}
+
 /// Given a just-completed match and the other knockout matches for its
 /// category, returns updated copies of any matches whose TBD slot should now
 /// resolve to a winner/loser. Caller is expected to write [completed] and the

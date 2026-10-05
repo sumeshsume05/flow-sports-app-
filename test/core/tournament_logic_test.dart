@@ -880,6 +880,101 @@ void main() {
     });
   });
 
+  group('generateKnockoutMatchesForTwo', () {
+    test('a single Final, both teams known directly (no TBD)', () {
+      final seeds = [
+        StandingRow(teamId: 's1', teamName: 'Seed1'),
+        StandingRow(teamId: 's2', teamName: 'Seed2'),
+      ];
+      final matches = generateKnockoutMatchesForTwo(
+        twoSeeds: seeds,
+        sport: 'badminton',
+        category: 'girls',
+        season: '2026',
+      );
+      expect(matches.length, 1);
+      expect(matches.single.matchCode, 'KOF');
+      expect(matches.single.teamA.name, 'Seed1');
+      expect(matches.single.teamB.name, 'Seed2');
+      expect(matches.single.teamA.isTbd, isFalse);
+      expect(matches.single.teamB.isTbd, isFalse);
+    });
+  });
+
+  group('generateKnockoutMatchesForThree', () {
+    List<StandingRow> seeds() => [
+          StandingRow(teamId: 's1', teamName: 'Seed1'),
+          StandingRow(teamId: 's2', teamName: 'Seed2'),
+          StandingRow(teamId: 's3', teamName: 'Seed3'),
+        ];
+
+    test('Seed 1 has a bye in the Final; Seed 2 vs Seed 3 play the Semifinal', () {
+      final matches = generateKnockoutMatchesForThree(
+        threeSeeds: seeds(),
+        sport: 'badminton',
+        category: 'girls',
+        season: '2026',
+      );
+      final byCode = {for (final m in matches) m.matchCode: m};
+
+      expect(byCode['KO1']!.teamA.name, 'Seed2');
+      expect(byCode['KO1']!.teamB.name, 'Seed3');
+      expect(byCode['KOF']!.teamA.name, 'Seed1'); // the bye, known directly
+      expect(byCode['KOF']!.teamA.isTbd, isFalse);
+      expect(byCode['KOF']!.teamB.isTbd, isTrue); // winner of KO1
+    });
+
+    test('resolveDependentSlots fills the Final once the Semifinal completes', () {
+      final matches = generateKnockoutMatchesForThree(
+        threeSeeds: seeds(),
+        sport: 'badminton',
+        category: 'girls',
+        season: '2026',
+      ).map((m) => Match(
+            id: m.matchCode,
+            sport: m.sport,
+            category: m.category,
+            season: m.season,
+            stage: m.stage,
+            matchNumber: m.matchNumber,
+            label: m.label,
+            matchCode: m.matchCode,
+            teamA: m.teamA,
+            teamB: m.teamB,
+            teamASource: m.teamASource,
+            teamBSource: m.teamBSource,
+            notifyTopic: m.notifyTopic,
+          )).toList();
+
+      final ko1 = matches.firstWhere((m) => m.matchCode == 'KO1');
+      final completedKo1 = Match(
+        id: ko1.id,
+        sport: ko1.sport,
+        category: ko1.category,
+        season: ko1.season,
+        stage: ko1.stage,
+        matchNumber: ko1.matchNumber,
+        label: ko1.label,
+        matchCode: ko1.matchCode,
+        teamA: ko1.teamA,
+        teamB: ko1.teamB,
+        scoreA: 15,
+        scoreB: 21,
+        result: MatchResult.teamB, // Seed3 wins the Semifinal
+        status: MatchStatus.completed,
+        notifyTopic: ko1.notifyTopic,
+      );
+
+      final updates = resolveDependentSlots(
+        completed: completedKo1,
+        otherKnockoutMatches: matches.where((m) => m.matchCode != 'KO1').toList(),
+      );
+
+      final finalUpdate = updates.firstWhere((m) => m.matchCode == 'KOF');
+      expect(finalUpdate.teamB.name, 'Seed3');
+    });
+  });
+
   group('computePodium', () {
     Match ko(String code, String teamAId, String teamBId, MatchResult? result) => Match(
           id: code,
@@ -935,6 +1030,35 @@ void main() {
         ko('KO2', 'Seed3', 'Seed4', MatchResult.tie),
         ko('KO3', 'Seed2', 'Seed4', MatchResult.teamB),
         ko('KOF', 'Seed1', 'Seed4', MatchResult.teamA),
+      ];
+      expect(computePodium(matches), isNull);
+    });
+
+    test('2-team shape: champion/runner-up from the Final alone, no semifinalists', () {
+      final matches = [ko('KOF', 'Seed1', 'Seed2', MatchResult.teamA)];
+      final podium = computePodium(matches);
+      expect(podium, isNotNull);
+      expect(podium!.champion.teamId, 'Seed1');
+      expect(podium.runnerUp.teamId, 'Seed2');
+      expect(podium.semifinalists, isEmpty);
+    });
+
+    test('3-team shape: the Semifinal loser is the lone "3rd place", not a pair', () {
+      final matches = [
+        ko('KO1', 'Seed2', 'Seed3', MatchResult.teamB), // Seed3 wins the Semifinal
+        ko('KOF', 'Seed1', 'Seed3', MatchResult.teamA), // Seed1 (bye) wins the Final
+      ];
+      final podium = computePodium(matches);
+      expect(podium, isNotNull);
+      expect(podium!.champion.teamId, 'Seed1');
+      expect(podium.runnerUp.teamId, 'Seed3');
+      expect(podium.semifinalists.map((t) => t.teamId).toList(), ['Seed2']);
+    });
+
+    test('3-team shape: null until the Semifinal is decided too, not just the Final', () {
+      final matches = [
+        ko('KO1', 'Seed2', 'Seed3', null),
+        ko('KOF', 'Seed1', 'Seed3', MatchResult.teamA),
       ];
       expect(computePodium(matches), isNull);
     });

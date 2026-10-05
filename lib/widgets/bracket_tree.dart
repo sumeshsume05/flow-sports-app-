@@ -7,12 +7,15 @@ import '../core/design/app_spacing.dart';
 import '../models/match.dart';
 import 'status_badge.dart';
 
-/// A simple 4-box knockout bracket visual: Match 1, Match 2, Match 3, Final.
-/// Not a package dependency — the bracket only ever has these 4 fixed slots
-/// (see core/utils/bracket_resolver.dart), so a custom widget is simpler than
-/// pulling in a generic tree-drawing library for one fixed shape.
+/// A simple knockout bracket visual. Renders whichever shape is actually
+/// present (see core/utils/bracket_resolver.dart's 2/3/4-team generators —
+/// the admin picks the qualifier count, so this needs to handle all three):
+/// just a Final (2 teams), Semifinal + Final (3 teams, Seed 1 had a bye), or
+/// the full Match 1/2/3 + Final (4 teams). Not a package dependency — a
+/// custom widget is simpler than pulling in a generic tree-drawing library
+/// for these few fixed shapes.
 class BracketTree extends StatelessWidget {
-  final List<Match> knockoutMatches; // KO1, KO2, KO3, KOF, in any order
+  final List<Match> knockoutMatches; // KO1, KO2, KO3, KOF — whichever exist
   final void Function(Match match)? onTapMatch;
 
   const BracketTree({super.key, required this.knockoutMatches, this.onTapMatch});
@@ -31,7 +34,7 @@ class BracketTree extends StatelessWidget {
     final ko3 = _byCode('KO3');
     final koF = _byCode('KOF');
 
-    if (ko1 == null || ko2 == null || ko3 == null || koF == null) {
+    if (koF == null) {
       return Padding(
         padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
@@ -44,6 +47,39 @@ class BracketTree extends StatelessWidget {
       );
     }
 
+    final arrow = Icon(Icons.arrow_downward_rounded, color: Theme.of(context).colorScheme.outline);
+
+    // 2-team shape: just the Final.
+    if (ko1 == null) {
+      return Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: _BracketBox(match: koF, onTap: onTapMatch, highlight: true),
+      ).animate().fadeIn(duration: 250.ms);
+    }
+
+    // 3-team shape: Semifinal (Seeds 2 vs 3) -> Final (Seed 1 had a bye).
+    if (ko2 == null || ko3 == null) {
+      return Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _BracketBox(match: ko1, onTap: onTapMatch, subtitle: 'Winner faces Seed 1 (bye) in the Final'),
+            const SizedBox(height: AppSpacing.xs),
+            arrow,
+            const SizedBox(height: AppSpacing.xs),
+            _BracketBox(
+              match: koF,
+              onTap: onTapMatch,
+              subtitle: 'Seed 1 (bye) vs the Semifinal winner',
+              highlight: true,
+            ),
+          ],
+        ),
+      ).animate().fadeIn(duration: 250.ms);
+    }
+
+    // 4-team shape (the original, unchanged).
     return Padding(
       padding: const EdgeInsets.all(AppSpacing.md),
       child: Column(
@@ -58,12 +94,12 @@ class BracketTree extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.xs),
-          Icon(Icons.arrow_downward_rounded, color: Theme.of(context).colorScheme.outline),
+          arrow,
           const SizedBox(height: AppSpacing.xs),
           _BracketBox(
               match: ko3, onTap: onTapMatch, subtitle: 'Loser of SF1 vs Winner of SF2 — winner reaches the Final'),
           const SizedBox(height: AppSpacing.xs),
-          Icon(Icons.arrow_downward_rounded, color: Theme.of(context).colorScheme.outline),
+          arrow,
           const SizedBox(height: AppSpacing.xs),
           _BracketBox(
             match: koF,
