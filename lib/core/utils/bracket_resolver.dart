@@ -1,12 +1,118 @@
 import '../../models/match.dart';
 import '../../models/standing_row.dart';
 
+/// Builds the Final — one `KOF` match normally, or two (`KOF1`/`KOF2`) when
+/// [bestOfThreeFinal] is set, sharing identical team refs/sources so the
+/// generic [resolveDependentSlots] resolves both in a single pass with no
+/// changes needed there. A possible decider `KOF3` is never created here —
+/// see [generateFinalGame3], triggered explicitly by the admin only if Games
+/// 1 and 2 split 1-1.
+List<Match> _finalGames({
+  required TeamRef teamA,
+  required TeamRef teamB,
+  required MatchSource teamASource,
+  required MatchSource teamBSource,
+  required String sport,
+  required String category,
+  required String season,
+  required int startMatchNumber,
+  required bool bestOfThreeFinal,
+}) {
+  if (!bestOfThreeFinal) {
+    return [
+      Match(
+        id: '',
+        sport: sport,
+        category: category,
+        season: season,
+        stage: MatchStage.knockout,
+        matchNumber: startMatchNumber,
+        label: 'Final',
+        matchCode: 'KOF',
+        teamA: teamA,
+        teamB: teamB,
+        teamASource: teamASource,
+        teamBSource: teamBSource,
+        status: MatchStatus.upcoming,
+        notifyTopic: '${sport}_$category',
+      ),
+    ];
+  }
+
+  return [
+    Match(
+      id: '',
+      sport: sport,
+      category: category,
+      season: season,
+      stage: MatchStage.knockout,
+      matchNumber: startMatchNumber,
+      label: 'Final — Game 1',
+      matchCode: 'KOF1',
+      teamA: teamA,
+      teamB: teamB,
+      teamASource: teamASource,
+      teamBSource: teamBSource,
+      status: MatchStatus.upcoming,
+      notifyTopic: '${sport}_$category',
+    ),
+    Match(
+      id: '',
+      sport: sport,
+      category: category,
+      season: season,
+      stage: MatchStage.knockout,
+      matchNumber: startMatchNumber + 1,
+      label: 'Final — Game 2',
+      matchCode: 'KOF2',
+      teamA: teamA,
+      teamB: teamB,
+      teamASource: teamASource,
+      teamBSource: teamBSource,
+      status: MatchStatus.upcoming,
+      notifyTopic: '${sport}_$category',
+    ),
+  ];
+}
+
+/// Generates the 3rd Final game — only needed when a best-of-3 Final (see
+/// [_finalGames]) splits 1-1 after Games 1 and 2. Admin-triggered explicitly
+/// (mirrors round_robin.generateTiebreakerMatches' "schedule one more match
+/// on demand" pattern) rather than auto-created, since it's only sometimes
+/// needed. Teams are passed in directly, not as a [MatchSource] lookup,
+/// because by the time Game 3 is needed Game 1 has already completed and
+/// resolved exactly who's playing — there's nothing left to resolve.
+Match generateFinalGame3({
+  required TeamRef teamA,
+  required TeamRef teamB,
+  required String sport,
+  required String category,
+  required String season,
+  required int matchNumber,
+}) {
+  return Match(
+    id: '',
+    sport: sport,
+    category: category,
+    season: season,
+    stage: MatchStage.knockout,
+    matchNumber: matchNumber,
+    label: 'Final — Game 3 (Decider)',
+    matchCode: 'KOF3',
+    teamA: teamA,
+    teamB: teamB,
+    status: MatchStatus.upcoming,
+    notifyTopic: '${sport}_$category',
+  );
+}
+
 /// Generates the 4-match "page playoff" knockout bracket from the top-4 league
 /// standings, mirroring the source spreadsheet exactly:
 ///   KO1: Seed 1 vs Seed 2 -> winner advances DIRECTLY to the Final
 ///   KO2: Seed 3 vs Seed 4 -> winner advances to KO3
 ///   KO3: loser of KO1 vs winner of KO2 -> winner advances to the Final
-///   KOF: winner of KO1 vs winner of KO3
+///   KOF: winner of KO1 vs winner of KO3 (or KOF1/KOF2[/KOF3] — see
+///   [_finalGames] — when the admin picked a best-of-3 Final)
 ///
 /// Call this once the league stage is complete for a category, after the admin
 /// has confirmed seed order (see standings_calculator.topFourHasAmbiguousTie).
@@ -21,6 +127,7 @@ List<Match> generateKnockoutMatches({
   required String sport,
   required String category,
   required String season,
+  bool bestOfThreeFinal = false,
 }) {
   assert(top4Seeds.length == 4);
   final seed1 = top4Seeds[0];
@@ -82,24 +189,19 @@ List<Match> generateKnockoutMatches({
     notifyTopic: '${sport}_$category',
   );
 
-  final koFinal = Match(
-    id: '',
-    sport: sport,
-    category: category,
-    season: season,
-    stage: MatchStage.knockout,
-    matchNumber: 4,
-    label: 'Final',
-    matchCode: 'KOF',
+  final finalGames = _finalGames(
     teamA: TeamRef.tbd,
     teamB: TeamRef.tbd,
     teamASource: const MatchSource.winnerOf('KO1'),
     teamBSource: const MatchSource.winnerOf('KO3'),
-    status: MatchStatus.upcoming,
-    notifyTopic: '${sport}_$category',
+    sport: sport,
+    category: category,
+    season: season,
+    startMatchNumber: 4,
+    bestOfThreeFinal: bestOfThreeFinal,
   );
 
-  return [ko1, ko2, ko3, koFinal];
+  return [ko1, ko2, ko3, ...finalGames];
 }
 
 /// Generates a 2-team bracket — just the Final, both teams already known
@@ -112,29 +214,23 @@ List<Match> generateKnockoutMatchesForTwo({
   required String sport,
   required String category,
   required String season,
+  bool bestOfThreeFinal = false,
 }) {
   assert(twoSeeds.length == 2);
   final seed1 = twoSeeds[0];
   final seed2 = twoSeeds[1];
 
-  final koFinal = Match(
-    id: '',
-    sport: sport,
-    category: category,
-    season: season,
-    stage: MatchStage.knockout,
-    matchNumber: 1,
-    label: 'Final',
-    matchCode: 'KOF',
+  return _finalGames(
     teamA: TeamRef(teamId: seed1.teamId, name: seed1.teamName),
     teamB: TeamRef(teamId: seed2.teamId, name: seed2.teamName),
     teamASource: const MatchSource.seed(1),
     teamBSource: const MatchSource.seed(2),
-    status: MatchStatus.upcoming,
-    notifyTopic: '${sport}_$category',
+    sport: sport,
+    category: category,
+    season: season,
+    startMatchNumber: 1,
+    bestOfThreeFinal: bestOfThreeFinal,
   );
-
-  return [koFinal];
 }
 
 /// Generates a 3-team bracket: Seed 1 gets a bye straight to the Final;
@@ -149,6 +245,7 @@ List<Match> generateKnockoutMatchesForThree({
   required String sport,
   required String category,
   required String season,
+  bool bestOfThreeFinal = false,
 }) {
   assert(threeSeeds.length == 3);
   final seed1 = threeSeeds[0];
@@ -172,25 +269,20 @@ List<Match> generateKnockoutMatchesForThree({
     notifyTopic: '${sport}_$category',
   );
 
-  final koFinal = Match(
-    id: '',
-    sport: sport,
-    category: category,
-    season: season,
-    stage: MatchStage.knockout,
-    matchNumber: 2,
-    label: 'Final',
-    matchCode: 'KOF',
+  final finalGames = _finalGames(
     // Seed 1 has a bye — known directly, not a TBD slot.
     teamA: TeamRef(teamId: seed1.teamId, name: seed1.teamName),
     teamB: TeamRef.tbd,
     teamASource: const MatchSource.seed(1),
     teamBSource: const MatchSource.winnerOf('KO1'),
-    status: MatchStatus.upcoming,
-    notifyTopic: '${sport}_$category',
+    sport: sport,
+    category: category,
+    season: season,
+    startMatchNumber: 2,
+    bestOfThreeFinal: bestOfThreeFinal,
   );
 
-  return [semifinal, koFinal];
+  return [semifinal, ...finalGames];
 }
 
 /// Given a just-completed match and the other knockout matches for its

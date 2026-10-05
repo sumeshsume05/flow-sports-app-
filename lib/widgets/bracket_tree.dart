@@ -27,14 +27,50 @@ class BracketTree extends StatelessWidget {
     return null;
   }
 
+  /// Renders the Final slot — a single box normally, or (when the admin
+  /// picked a best-of-3 Final — see bracket_resolver.dart's _finalGames)
+  /// a stack of game boxes with a running series score. teamA/teamB are
+  /// identical across KOF1/KOF2[/KOF3] by construction, so any one game's
+  /// refs name the two sides consistently for the series-score label.
+  Widget _finalSlot(BuildContext context, {Match? koF1, Match? koF2, Match? koF3, String? subtitle}) {
+    if (koF1 == null) return const SizedBox.shrink();
+    final games = [koF1, koF2!, ?koF3];
+    final aWins = games.where((m) => m.result == MatchResult.teamA).length;
+    final bWins = games.where((m) => m.result == MatchResult.teamB).length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Final — Best of 3 ($aWins–$bWins)',
+          style: Theme.of(context).textTheme.titleSmall,
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        if (subtitle != null) ...[
+          Text(subtitle, style: Theme.of(context).textTheme.bodySmall, textAlign: TextAlign.center),
+          const SizedBox(height: AppSpacing.xs),
+        ],
+        for (var i = 0; i < games.length; i++) ...[
+          _BracketBox(match: games[i], onTap: onTapMatch, highlight: true),
+          if (i < games.length - 1) const SizedBox(height: AppSpacing.xs),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ko1 = _byCode('KO1');
     final ko2 = _byCode('KO2');
     final ko3 = _byCode('KO3');
     final koF = _byCode('KOF');
+    final koF1 = _byCode('KOF1');
+    final koF2 = _byCode('KOF2');
+    final koF3 = _byCode('KOF3');
+    final hasFinal = koF != null || koF1 != null;
 
-    if (koF == null) {
+    if (!hasFinal) {
       return Padding(
         padding: const EdgeInsets.all(AppSpacing.xl),
         child: Column(
@@ -49,11 +85,18 @@ class BracketTree extends StatelessWidget {
 
     final arrow = Icon(Icons.arrow_downward_rounded, color: Theme.of(context).colorScheme.outline);
 
+    Widget finalBox({String? subtitle}) {
+      if (koF1 != null) {
+        return _finalSlot(context, koF1: koF1, koF2: koF2, koF3: koF3, subtitle: subtitle);
+      }
+      return _BracketBox(match: koF!, onTap: onTapMatch, subtitle: subtitle, highlight: true);
+    }
+
     // 2-team shape: just the Final.
     if (ko1 == null) {
       return Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
-        child: _BracketBox(match: koF, onTap: onTapMatch, highlight: true),
+        child: finalBox(),
       ).animate().fadeIn(duration: 250.ms);
     }
 
@@ -68,12 +111,7 @@ class BracketTree extends StatelessWidget {
             const SizedBox(height: AppSpacing.xs),
             arrow,
             const SizedBox(height: AppSpacing.xs),
-            _BracketBox(
-              match: koF,
-              onTap: onTapMatch,
-              subtitle: 'Seed 1 (bye) vs the Semifinal winner',
-              highlight: true,
-            ),
+            finalBox(subtitle: 'Seed 1 (bye) vs the Semifinal winner'),
           ],
         ),
       ).animate().fadeIn(duration: 250.ms);
@@ -101,12 +139,7 @@ class BracketTree extends StatelessWidget {
           const SizedBox(height: AppSpacing.xs),
           arrow,
           const SizedBox(height: AppSpacing.xs),
-          _BracketBox(
-            match: koF,
-            onTap: onTapMatch,
-            subtitle: 'Winner of SF1 vs Winner of the Final Qualifier',
-            highlight: true,
-          ),
+          finalBox(subtitle: 'Winner of SF1 vs Winner of the Final Qualifier'),
         ],
       ),
     ).animate().fadeIn(duration: 250.ms);

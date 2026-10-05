@@ -15,15 +15,18 @@ class Podium {
 
 /// Derives final placement from whichever knockout bracket shape is
 /// actually present (see bracket_resolver.dart's 2/3/4-team generators) —
-/// 1st/2nd always come from the Final (KOF); who else counts as a
-/// "semifinalist" (shown as 3rd place) depends on the shape:
-///   - 4-team (KO1/KO2/KO3/KOF all present): semifinalists = KO3 loser +
-///     KO2 loser (the two teams who never reached the Final) — unchanged
-///     from the original fixed shape.
-///   - 3-team (KO1 + KOF only, no KO2/KO3): semifinalists = [KO1 loser]
-///     (the one team eliminated in the Semifinal; Seed 1 had a bye).
-///   - 2-team (KOF only): semifinalists = [] — there's no 3rd place to
-///     show when only 2 teams qualified at all.
+/// 1st/2nd normally come straight from the Final (KOF), or from a best-of-3
+/// series (KOF1/KOF2[/KOF3] — see bracket_resolver.dart's _finalGames and
+/// generateFinalGame3) when the admin picked that format instead. Who counts
+/// as a "semifinalist" (shown as 3rd place) depends on the qualifier shape,
+/// independently of the Final format:
+///   - 4-team (KO1/KO2/KO3 all present): semifinalists = KO3 loser + KO2
+///     loser (the two teams who never reached the Final) — unchanged from
+///     the original fixed shape.
+///   - 3-team (KO1 present, no KO2/KO3): semifinalists = [KO1 loser] (the
+///     one team eliminated in the Semifinal; Seed 1 had a bye).
+///   - 2-team (neither KO1 nor KO2/KO3): semifinalists = [] — there's no
+///     3rd place to show when only 2 teams qualified at all.
 /// Returns null until every match that actually exists in the shape has a
 /// genuine (non-tied) result — same reasoning as resolveDependentSlots in
 /// bracket_resolver.dart: a tied score can't legitimately happen in a
@@ -39,6 +42,9 @@ Podium? computePodium(List<Match> knockoutMatches) {
   }
 
   final koF = byCode('KOF');
+  final kof1 = byCode('KOF1');
+  final kof2 = byCode('KOF2');
+  final kof3 = byCode('KOF3');
   final ko3 = byCode('KO3');
   final ko2 = byCode('KO2');
   final ko1 = byCode('KO1');
@@ -47,7 +53,34 @@ Podium? computePodium(List<Match> knockoutMatches) {
   TeamRef winnerOf(Match m) => m.result == MatchResult.teamA ? m.teamA : m.teamB;
   TeamRef loserOf(Match m) => m.result == MatchResult.teamA ? m.teamB : m.teamA;
 
-  if (!decided(koF)) return null;
+  TeamRef champion;
+  TeamRef runnerUp;
+  if (kof1 != null) {
+    // Best-of-3 Final: whoever wins 2 of the (up to 3) games is champion.
+    // teamA/teamB are identical across all games in the series (shared
+    // teamASource/teamBSource at generation time), so either game's refs
+    // name the two sides consistently.
+    if (!decided(kof1) || !decided(kof2)) return null;
+    final aWins = [kof1, kof2!].where((m) => m.result == MatchResult.teamA).length;
+    final bWins = [kof1, kof2].where((m) => m.result == MatchResult.teamB).length;
+    if (aWins == 2) {
+      champion = kof1.teamA;
+      runnerUp = kof1.teamB;
+    } else if (bWins == 2) {
+      champion = kof1.teamB;
+      runnerUp = kof1.teamA;
+    } else {
+      // Split 1-1 — needs the decider (Game 3).
+      if (!decided(kof3)) return null;
+      champion = winnerOf(kof3!);
+      runnerUp = loserOf(kof3);
+    }
+  } else {
+    // Single Final.
+    if (!decided(koF)) return null;
+    champion = winnerOf(koF!);
+    runnerUp = loserOf(koF);
+  }
 
   final List<TeamRef> semifinalists;
   if (ko2 != null && ko3 != null) {
@@ -64,8 +97,8 @@ Podium? computePodium(List<Match> knockoutMatches) {
   }
 
   return Podium(
-    champion: winnerOf(koF!),
-    runnerUp: loserOf(koF),
+    champion: champion,
+    runnerUp: runnerUp,
     semifinalists: semifinalists,
   );
 }
