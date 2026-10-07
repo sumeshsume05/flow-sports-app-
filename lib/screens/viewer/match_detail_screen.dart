@@ -8,6 +8,7 @@ import '../../core/design/app_spacing.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/commentary_ticker.dart';
+import '../../widgets/point_log_ticker.dart';
 import '../../widgets/prediction_widget.dart';
 import '../../widgets/reaction_bar.dart';
 import '../../widgets/status_badge.dart';
@@ -55,14 +56,23 @@ class MatchDetailScreen extends StatelessWidget {
                   ),
                   child: Column(
                     children: [
+                      if (match.status == MatchStatus.live) ...[
+                        Text(
+                          '${match.scoreA ?? 0}  —  ${match.scoreB ?? 0}',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.live),
+                        ),
+                        const Divider(height: AppSpacing.lg),
+                      ],
                       _TeamScoreRow(
                           name: match.teamA.name ?? 'TBD',
-                          score: match.scoreA,
+                          score: match.status == MatchStatus.live ? null : match.scoreA,
                           won: match.result == MatchResult.teamA),
                       const Divider(height: AppSpacing.lg),
                       _TeamScoreRow(
                           name: match.teamB.name ?? 'TBD',
-                          score: match.scoreB,
+                          score: match.status == MatchStatus.live ? null : match.scoreB,
                           won: match.result == MatchResult.teamB),
                     ],
                   ),
@@ -73,6 +83,12 @@ class MatchDetailScreen extends StatelessWidget {
                 ReactionBar(matchId: match.id, counts: match.reactionCounts),
                 const SizedBox(height: AppSpacing.md),
                 CommentaryTicker(matchId: match.id),
+                const SizedBox(height: AppSpacing.md),
+                PointLogTicker(
+                  matchId: match.id,
+                  teamAName: match.teamA.name ?? 'TBD',
+                  teamBName: match.teamB.name ?? 'TBD',
+                ),
                 const SizedBox(height: AppSpacing.lg),
                 if (match.venue != null)
                   _InfoRow(icon: Icons.location_on_outlined, label: match.venue!),

@@ -34,6 +34,8 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
   bool _initialized = false;
   bool _saving = false;
   bool _postingCommentary = false;
+  bool _adjustingLiveScoreA = false;
+  bool _adjustingLiveScoreB = false;
   String? _error;
 
   @override
@@ -126,6 +128,40 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
       if (mounted) setState(() => _error = e.message);
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  /// Bumps [team]'s live score by [delta] (+1 per point, -1 to undo a wrong
+  /// tap) and keeps the Final Score fields in sync with the resultant value
+  /// — without touching `_initFields`'s one-time-init guard, so an admin
+  /// mid-edit of those fields elsewhere never gets silently overwritten
+  /// except by their own live-score tap.
+  Future<void> _adjustLiveScore(String team, int delta) async {
+    setState(() {
+      if (team == 'A') {
+        _adjustingLiveScoreA = true;
+      } else {
+        _adjustingLiveScoreB = true;
+      }
+      _error = null;
+    });
+    try {
+      final (scoreA, scoreB) =
+          await _firestoreService.incrementLiveScore(widget.matchId, team: team, delta: delta);
+      _scoreAController.text = scoreA.toString();
+      _scoreBController.text = scoreB.toString();
+    } on FirestoreWriteException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (team == 'A') {
+            _adjustingLiveScoreA = false;
+          } else {
+            _adjustingLiveScoreB = false;
+          }
+        });
+      }
     }
   }
 
@@ -277,6 +313,19 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
                 ],
               ),
               const SizedBox(height: AppSpacing.lg),
+              if (match.status == MatchStatus.live) ...[
+                _LiveScoreCard(
+                  teamAName: match.teamA.name ?? 'TBD',
+                  teamBName: match.teamB.name ?? 'TBD',
+                  scoreA: int.tryParse(_scoreAController.text) ?? 0,
+                  scoreB: int.tryParse(_scoreBController.text) ?? 0,
+                  adjustingA: _adjustingLiveScoreA,
+                  adjustingB: _adjustingLiveScoreB,
+                  onAdjustA: (delta) => _adjustLiveScore('A', delta),
+                  onAdjustB: (delta) => _adjustLiveScore('B', delta),
+                ),
+                const SizedBox(height: AppSpacing.lg),
+              ],
               Text('Live commentary', style: textTheme.titleSmall),
               const SizedBox(height: AppSpacing.xs),
               Text(
@@ -434,6 +483,131 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
           ).animate().fadeIn(duration: 200.ms);
         },
       ),
+    );
+  }
+}
+
+/// Per-team +/- live score control, shown only while a match is `live` (see
+/// `_AdminMatchEditScreenState.build`). Writes straight to the same
+/// scoreA/scoreB the Final Score section below saves — see
+/// `FirestoreService.incrementLiveScore` — so finishing a match is just
+/// reviewing this number and tapping the existing Save Result button, not
+/// retyping it.
+class _LiveScoreCard extends StatelessWidget {
+  final String teamAName;
+  final String teamBName;
+  final int scoreA;
+  final int scoreB;
+  final bool adjustingA;
+  final bool adjustingB;
+  final void Function(int delta) onAdjustA;
+  final void Function(int delta) onAdjustB;
+
+  const _LiveScoreCard({
+    required this.teamAName,
+    required this.teamBName,
+    required this.scoreA,
+    required this.scoreB,
+    required this.adjustingA,
+    required this.adjustingB,
+    required this.onAdjustA,
+    required this.onAdjustB,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.live.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.live.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Live Score', style: textTheme.titleSmall?.copyWith(color: AppColors.live)),
+          const SizedBox(height: AppSpacing.sm),
+          Row(
+            children: [
+              Expanded(
+                child: _LiveScoreTeamControl(
+                  name: teamAName,
+                  score: scoreA,
+                  adjusting: adjustingA,
+                  onTapPlus: () => onAdjustA(1),
+                  onTapMinus: scoreA > 0 ? () => onAdjustA(-1) : null,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.md),
+              Expanded(
+                child: _LiveScoreTeamControl(
+                  name: teamBName,
+                  score: scoreB,
+                  adjusting: adjustingB,
+                  onTapPlus: () => onAdjustB(1),
+                  onTapMinus: scoreB > 0 ? () => onAdjustB(-1) : null,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Tap + the moment a team wins a point. Tap − to undo a wrong tap for that team.',
+            style: textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LiveScoreTeamControl extends StatelessWidget {
+  final String name;
+  final int score;
+  final bool adjusting;
+  final VoidCallback onTapPlus;
+  final VoidCallback? onTapMinus;
+
+  const _LiveScoreTeamControl({
+    required this.name,
+    required this.score,
+    required this.adjusting,
+    required this.onTapPlus,
+    required this.onTapMinus,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      children: [
+        Text(name, style: textTheme.labelMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+        const SizedBox(height: AppSpacing.xs),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            IconButton.outlined(
+              icon: const Icon(Icons.remove),
+              onPressed: adjusting ? null : onTapMinus,
+            ),
+            SizedBox(
+              width: 40,
+              child: Text(
+                '$score',
+                textAlign: TextAlign.center,
+                style: textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ),
+            IconButton.filled(
+              icon: const Icon(Icons.add),
+              onPressed: adjusting ? null : onTapPlus,
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

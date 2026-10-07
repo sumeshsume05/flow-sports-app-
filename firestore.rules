@@ -67,6 +67,19 @@ service cloud.firestore {
           request.resource.data.createdAt == request.time;
         allow update, delete: if isAdmin();
       }
+
+      // Live-score +/- point log — append-only: a wrong tap is corrected by
+      // a new entry (the admin's own - tap), never by editing or deleting a
+      // past one, so the log stays an honest record.
+      match /pointLog/{entryId} {
+        allow read: if true;
+        allow create: if isAdmin() &&
+          request.resource.data.team in ['A', 'B'] &&
+          request.resource.data.scoreA is int && request.resource.data.scoreA >= 0 &&
+          request.resource.data.scoreB is int && request.resource.data.scoreB >= 0 &&
+          request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
     }
 
     match /admins/{uid} {

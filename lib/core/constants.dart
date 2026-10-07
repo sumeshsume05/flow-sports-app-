@@ -46,6 +46,10 @@ const chatDisplayNameMinLength = 4;
 const commentaryCollection = 'commentary';
 const commentaryMaxLength = 200;
 
+/// Subcollection name under `matches/{matchId}` for the live-score +/- point
+/// log — append-only, mirrors [commentaryCollection]'s shape.
+const pointLogCollection = 'pointLog';
+
 /// Reaction keys viewers can tap on a match — single source of truth for
 /// both the Firestore field names (`match.reactionCounts[key]`) and the
 /// emoji glyphs shown in the UI.
