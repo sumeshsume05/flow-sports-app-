@@ -93,6 +93,22 @@ existed — the Seasons screen's empty state suggests creating a season
 labeled with that id to "adopt" any such pre-existing data rather than
 losing it.
 
+## Admin ↔ viewer navigation
+
+Admin screens (`/admin/*`) are plain top-level `GoRoute`s outside the
+viewer `ShellRoute` — no shared bottom nav/drawer between the two sides.
+The Admin Dashboard AppBar has a "View live app" icon
+(`Icons.visibility_outlined`, `admin_dashboard_screen.dart`) that does a
+plain `context.go('/')` — deliberately *not* the adjacent Logout icon's
+`signOut()` — so an admin can check what viewers currently see without
+ending their session. The Home screen's own admin icon
+(`Icons.admin_panel_settings_outlined`, `home_screen.dart`) routes back to
+`/admin` and, since the admin is still signed in, lands straight on the
+dashboard with no login prompt. (Before this existed, the only way back
+to Home from Admin was the Logout icon, which — as a side effect — forced
+a re-login on the way back; that was the actual cause of "admin has to
+sign in again every time," not a session-persistence bug.)
+
 ## Match engagement & live features
 
 Independent of tournament stage/rules — these apply to any match:
@@ -116,7 +132,12 @@ Independent of tournament stage/rules — these apply to any match:
   the match detail screen (`lib/widgets/point_log_ticker.dart`) and as a
   prominent accent-colored scoreboard on the match card/detail screen
   while live (the small per-row score only shows for
-  `upcoming`/`completed`, to avoid showing the same number twice).
+  `upcoming`/`completed`, to avoid showing the same number twice). The
+  live scoreboard shows each team's name directly above its own number
+  (`_LiveScoreboard` in both `match_card.dart` and
+  `match_detail_screen.dart`) rather than relying on the plain name rows
+  below — those rows are hidden entirely while live — so which score
+  belongs to which team is never ambiguous from a single glance.
 - **Reactions** (`lib/widgets/reaction_bar.dart`,
   `FirestoreService.incrementReaction`) — viewer emoji taps, no admin auth
   required, a `reactionCounts` map on the match doc updated via

@@ -237,6 +237,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             onPressed: () => context.push('/admin/seasons'),
           ),
           IconButton(
+            icon: const Icon(Icons.visibility_outlined),
+            tooltip: 'View live app',
+            // Deliberately context.go, not signOut — lets the admin check
+            // what viewers see without ending their admin session. The
+            // Home screen's own admin icon (Icons.admin_panel_settings_outlined)
+            // routes back to /admin and, since still signed in, lands
+            // straight on this dashboard with no login prompt.
+            onPressed: () => context.go('/'),
+          ),
+          IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Sign out',
             onPressed: () async {
