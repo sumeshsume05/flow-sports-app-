@@ -54,28 +54,26 @@ class MatchDetailScreen extends StatelessWidget {
                     color: Theme.of(context).colorScheme.surfaceContainerHigh,
                     borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
-                  child: Column(
-                    children: [
-                      if (match.status == MatchStatus.live) ...[
-                        Text(
-                          '${match.scoreA ?? 0}  —  ${match.scoreB ?? 0}',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.live),
+                  child: match.status == MatchStatus.live
+                      ? _LiveScoreboard(
+                          teamAName: match.teamA.name ?? 'TBD',
+                          teamBName: match.teamB.name ?? 'TBD',
+                          scoreA: match.scoreA ?? 0,
+                          scoreB: match.scoreB ?? 0,
+                        )
+                      : Column(
+                          children: [
+                            _TeamScoreRow(
+                                name: match.teamA.name ?? 'TBD',
+                                score: match.scoreA,
+                                won: match.result == MatchResult.teamA),
+                            const Divider(height: AppSpacing.lg),
+                            _TeamScoreRow(
+                                name: match.teamB.name ?? 'TBD',
+                                score: match.scoreB,
+                                won: match.result == MatchResult.teamB),
+                          ],
                         ),
-                        const Divider(height: AppSpacing.lg),
-                      ],
-                      _TeamScoreRow(
-                          name: match.teamA.name ?? 'TBD',
-                          score: match.status == MatchStatus.live ? null : match.scoreA,
-                          won: match.result == MatchResult.teamA),
-                      const Divider(height: AppSpacing.lg),
-                      _TeamScoreRow(
-                          name: match.teamB.name ?? 'TBD',
-                          score: match.status == MatchStatus.live ? null : match.scoreB,
-                          won: match.result == MatchResult.teamB),
-                    ],
-                  ),
                 ).animate().fadeIn(duration: 250.ms).slideY(begin: 0.05, end: 0),
                 const SizedBox(height: AppSpacing.md),
                 PredictionWidget(match: match),
@@ -116,6 +114,59 @@ class MatchDetailScreen extends StatelessWidget {
         ? '${match.label}: $a ${match.scoreA} - ${match.scoreB} $b'
         : '${match.label}: $a vs $b (${match.status.name})';
     Share.share(text);
+  }
+}
+
+/// Prominent running score for a `live` match, with each team's name
+/// directly above its own number so there's no ambiguity about which
+/// score belongs to which team — replaces the plain `_TeamScoreRow`s while
+/// live (same idea as `match_card.dart`'s `_LiveScoreboard`, sized up for
+/// this screen's larger score text).
+class _LiveScoreboard extends StatelessWidget {
+  final String teamAName;
+  final String teamBName;
+  final int scoreA;
+  final int scoreB;
+
+  const _LiveScoreboard({
+    required this.teamAName,
+    required this.teamBName,
+    required this.scoreA,
+    required this.scoreB,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const nameStyle = TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.live);
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(teamAName,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: nameStyle),
+            ),
+            const SizedBox(width: AppSpacing.sm),
+            Expanded(
+              child: Text(teamBName,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: nameStyle),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          '$scoreA  —  $scoreB',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: AppColors.live),
+        ),
+      ],
+    );
   }
 }
 

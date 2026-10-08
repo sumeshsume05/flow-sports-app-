@@ -86,18 +86,17 @@ class MatchCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 if (match.status == MatchStatus.live) ...[
-                  _LiveScoreboard(scoreA: match.scoreA ?? 0, scoreB: match.scoreB ?? 0),
-                  const SizedBox(height: AppSpacing.sm),
+                  _LiveScoreboard(
+                    teamAName: aName,
+                    teamBName: bName,
+                    scoreA: match.scoreA ?? 0,
+                    scoreB: match.scoreB ?? 0,
+                  ),
+                ] else ...[
+                  _TeamRow(name: aName, score: match.scoreA, isWinner: aWon),
+                  const SizedBox(height: AppSpacing.xs),
+                  _TeamRow(name: bName, score: match.scoreB, isWinner: bWon),
                 ],
-                _TeamRow(
-                    name: aName,
-                    score: match.status == MatchStatus.live ? null : match.scoreA,
-                    isWinner: aWon),
-                const SizedBox(height: AppSpacing.xs),
-                _TeamRow(
-                    name: bName,
-                    score: match.status == MatchStatus.live ? null : match.scoreB,
-                    isWinner: bWon),
                 if (match.venue != null || match.court != null) ...[
                   const SizedBox(height: AppSpacing.sm),
                   Row(
@@ -150,26 +149,62 @@ class MatchCard extends StatelessWidget {
 
 /// Prominent, accent-colored running score for a `live` match — distinct
 /// from the small per-row number `_TeamRow` shows for `upcoming`/`completed`,
-/// so a viewer can tell at a glance this number is still changing.
+/// so a viewer can tell at a glance this number is still changing. Each
+/// team's name sits directly above its own number (rather than relying on
+/// the plain name rows below, which this widget replaces while live) so
+/// there's no ambiguity about which score belongs to which team.
 class _LiveScoreboard extends StatelessWidget {
+  final String teamAName;
+  final String teamBName;
   final int scoreA;
   final int scoreB;
 
-  const _LiveScoreboard({required this.scoreA, required this.scoreB});
+  const _LiveScoreboard({
+    required this.teamAName,
+    required this.teamBName,
+    required this.scoreA,
+    required this.scoreB,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final nameStyle = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w600,
+      color: AppColors.live,
+    );
+    const scoreStyle = TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.live);
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm),
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm, horizontal: AppSpacing.xs),
       decoration: BoxDecoration(
         color: AppColors.live.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(AppRadius.sm),
       ),
-      child: Text(
-        '$scoreA  —  $scoreB',
-        textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.live),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(teamAName,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: nameStyle),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(teamBName,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: nameStyle),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text('$scoreA  —  $scoreB', textAlign: TextAlign.center, style: scoreStyle),
+        ],
       ),
     );
   }
