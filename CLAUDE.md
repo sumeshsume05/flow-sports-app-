@@ -60,6 +60,76 @@ the update pipeline at all, build the APK locally and send it to them
 directly (bypasses GitHub Releases and `version.json` entirely, so no
 other install is affected).
 
+Client side, `AppUpdateGate` (`lib/widgets/app_update_gate.dart`, mounted
+once around the whole app) checks `version.json` on launch *and* on every
+app resume (not just launch) — a release published while the app was
+backgrounded still prompts without waiting for a relaunch. A dismissible
+prompt is shown once per distinct `latestVersionCode`, not once per
+app-open, so dismissing it doesn't mean never seeing it again, just not
+re-nagging about the same version repeatedly.
+
+## Seasons
+
+Every team/match/standing doc carries a `season` id
+(`lib/models/season.dart`, `admin_seasons_screen.dart`) — this event runs
+multiple times a year, and each run gets its own Season rather than
+colliding with the previous run's data. `config/activeSeason` is a single
+**global** Firestore document every viewer and admin screen watches
+(`SeasonState`) — switching it instantly changes what literally everyone
+sees, live, across the whole event, with no per-device override.
+
+Creating a new season **immediately activates it** — there's no separate
+"activate" step and no staging/preview season. This is why testing a
+schema or format change safely during a live event can't use a new
+season (it would switch every viewer over instantly) — the pattern used
+so far instead is a throwaway category (e.g. `'test'`) within the *same*
+already-active season, since the Home screen only ever renders cards for
+`Category.all` (`boys`/`girls`), so a `'test'` category is reachable by
+admin via direct route navigation but invisible to every viewer.
+
+`legacySeasonId` (`lib/core/constants.dart`, currently `'2026'`) is the
+season id data was written under before this multi-season feature
+existed — the Seasons screen's empty state suggests creating a season
+labeled with that id to "adopt" any such pre-existing data rather than
+losing it.
+
+## Match engagement & live features
+
+Independent of tournament stage/rules — these apply to any match:
+
+- **Live commentary** (`lib/widgets/commentary_ticker.dart`,
+  `FirestoreService.postCommentary`/`watchCommentary`) — free-text updates
+  the admin posts against a match, stored in a `matches/{id}/commentary`
+  subcollection, with `lastCommentaryText`/`lastCommentaryAt` denormalized
+  onto the match doc so the match list can preview the latest entry
+  without an extra listener per card.
+- **Live score** (shipped 2026-10-07) — a per-team +/- control
+  (`admin_match_edit_screen.dart`'s Live Score card, shown only while
+  `status == live`) that writes straight to the *same* `scoreA`/`scoreB`
+  the final-result entry uses (`FirestoreService.incrementLiveScore`, a
+  Firestore transaction, clamped at 0) rather than a separate counter —
+  finishing a match is just reviewing the live-built number and tapping
+  the existing Save Result button, nothing to retype or reconcile. Every
+  tap also appends to a `matches/{id}/pointLog` subcollection (same
+  append-only shape as `commentary` — a wrong tap is corrected by a new
+  entry, never an edit or delete), rendered as a point-by-point history on
+  the match detail screen (`lib/widgets/point_log_ticker.dart`) and as a
+  prominent accent-colored scoreboard on the match card/detail screen
+  while live (the small per-row score only shows for
+  `upcoming`/`completed`, to avoid showing the same number twice).
+- **Reactions** (`lib/widgets/reaction_bar.dart`,
+  `FirestoreService.incrementReaction`) — viewer emoji taps, no admin auth
+  required, a `reactionCounts` map on the match doc updated via
+  `FieldValue.increment`.
+- **Predictions** (`lib/widgets/prediction_widget.dart`,
+  `FirestoreService.castPrediction`) — viewer "who wins" pick before a
+  match starts, a `predictionCounts` map, same no-auth/atomic-increment
+  pattern as reactions; switching a pick decrements the old choice and
+  increments the new one in one write.
+- **CSV export** (`lib/core/utils/match_export.dart`'s `buildMatchesCsv`,
+  triggered from the admin dashboard) — every match across every
+  stage/category for a sport/season, one downloadable file.
+
 ## Tournament / match logic
 
 The codebase deliberately keeps each sport's rules self-contained (plain
@@ -165,9 +235,13 @@ Admin-only writes on match/team/season data; viewers can only write their
 own reaction, prediction, or chat message — never arbitrary fields.
 
 **Config-doc pattern** (`config/{docId}`, public read + admin-only write):
-used for both the chat on/off toggle (`config/chatSettings`) and the
-Home-screen announcement (`config/announcement`) — reuse this same shape
-for any future single-value admin setting rather than inventing a new one.
+used for the chat on/off toggle (`config/chatSettings`), the Home-screen
+announcement (`config/announcement`), and which season is currently active
+(`config/activeSeason`, see "Seasons" above) — reuse this same shape for
+any future single-value admin setting rather than inventing a new one.
+A `pointLog` entry is append-only by contrast (`allow update, delete:
+if false`) — see "Match engagement & live features" above — since it's a
+log, not a single current value.
 
 **No analytics SDK — a custom `presence` collection instead.** Admin's
 install/active-now counts (`admin_dashboard_screen.dart`) are *not* backed
