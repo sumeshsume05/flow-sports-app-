@@ -6,6 +6,7 @@ import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../core/utils/bracket_resolver.dart';
 import '../../core/utils/round_robin.dart';
+import '../../core/utils/sections.dart';
 import '../../core/utils/standings_calculator.dart';
 import '../../models/match.dart';
 import '../../models/standing_row.dart';
@@ -170,7 +171,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
             section: s,
             qualifyCount: 2,
             teams: teams.where((t) => t.section == s).toList(),
-            leagueMatches: leagueMatches.where((m) => m.section == s).toList(),
+            leagueMatches: leagueMatchesForSection(leagueMatches, teams, s),
             tiebreakerMatches: tiebreakerMatches.where((m) => m.section == s).toList(),
           ),
       ];

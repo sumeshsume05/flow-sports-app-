@@ -15,8 +15,10 @@ class MatchSection {
 
 /// Groups [matches] into sections, most-advanced stage first — Knockout,
 /// then any Tie-Breaker rounds (latest round first, since that's the one
-/// currently in play), then League last. Within a section, matches keep
-/// their natural match-number order.
+/// currently in play), then League, then Friendly matches last. Within a
+/// section, matches keep their natural match-number order. Every match lands
+/// in exactly one section — a league match with no section in a sectioned
+/// league goes to "League — Other matches" instead of disappearing.
 List<MatchSection> groupMatchesForDisplay(List<Match> matches) {
   final sections = <MatchSection>[];
 
@@ -54,6 +56,16 @@ List<MatchSection> groupMatchesForDisplay(List<Match> matches) {
         matches: league.where((m) => m.section == s).toList(),
       ));
     }
+    final unsectioned = league.where((m) => m.section == null).toList();
+    if (unsectioned.isNotEmpty) {
+      sections.add(MatchSection(title: 'League — Other matches', matches: unsectioned));
+    }
+  }
+
+  final friendlies = matches.where((m) => m.stage == MatchStage.friendly).toList()
+    ..sort((a, b) => a.matchNumber.compareTo(b.matchNumber));
+  if (friendlies.isNotEmpty) {
+    sections.add(MatchSection(title: 'Friendly matches (not counted)', matches: friendlies));
   }
 
   return sections;

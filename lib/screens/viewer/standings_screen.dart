@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/sections.dart';
 import '../../core/utils/standings_calculator.dart';
 import '../../models/match.dart';
 import '../../models/standing_row.dart';
@@ -77,7 +78,7 @@ class StandingsScreen extends StatelessWidget {
                     Builder(builder: (context) {
                       final sectionStandings = computeStandings(
                         teams: teams.where((t) => t.section == section).toList(),
-                        leagueMatches: leagueMatches.where((m) => m.section == section).toList(),
+                        leagueMatches: leagueMatchesForSection(leagueMatches, teams, section),
                       );
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

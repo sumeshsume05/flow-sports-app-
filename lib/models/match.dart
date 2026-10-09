@@ -3,7 +3,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/cricket/cricket_rules.dart';
 import '../core/cricket/cricket_toss.dart';
 
-enum MatchStage { league, knockout, tiebreaker }
+/// [friendly] matches are practice/exhibition games: shown in match lists but
+/// never counted in standings, qualification or the bracket (every one of
+/// those filters on `league`/`knockout`/`tiebreaker` by name, so a friendly
+/// is excluded by default).
+enum MatchStage { league, knockout, tiebreaker, friendly }
 
 enum MatchStatus { upcoming, live, completed }
 
