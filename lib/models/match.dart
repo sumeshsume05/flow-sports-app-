@@ -127,9 +127,9 @@ class Match {
   /// the earlier one's, since both can involve overlapping/identical teams.
   final int? tiebreakerRound;
 
-  /// Cricket only. This match's own copy of the rules (taken from the
-  /// tournament default when the match is first set up, so a later change to
-  /// the default never rewrites a match already underway), the player ids
+  /// Cricket only. This match's own copy of the rules (stamped from the
+  /// tournament default when the match is generated, so a later change to
+  /// the default never rewrites a match that already exists), the player ids
   /// picked for each side, and the toss. Absent/empty until set up, and for
   /// every other sport.
   final CricketRules? rules;
@@ -239,7 +239,46 @@ class Match {
         'notes': notes,
         'notifyTopic': notifyTopic,
         'tiebreakerRound': tiebreakerRound,
+        // Cricket only: written when the match is created so it keeps these
+        // rules even if the tournament default changes later.
+        if (rules != null) 'rules': rules!.toMap(),
       };
+
+  /// A copy of this match carrying [newRules]. Used to stamp a cricket
+  /// match with the rules in force at the moment it is generated.
+  Match withRules(CricketRules newRules) => Match(
+        id: id,
+        sport: sport,
+        category: category,
+        season: season,
+        stage: stage,
+        matchNumber: matchNumber,
+        label: label,
+        matchCode: matchCode,
+        section: section,
+        teamA: teamA,
+        teamB: teamB,
+        teamASource: teamASource,
+        teamBSource: teamBSource,
+        scoreA: scoreA,
+        scoreB: scoreB,
+        result: result,
+        status: status,
+        scheduledAt: scheduledAt,
+        venue: venue,
+        court: court,
+        notes: notes,
+        notifyTopic: notifyTopic,
+        reactionCounts: reactionCounts,
+        lastCommentaryText: lastCommentaryText,
+        lastCommentaryAt: lastCommentaryAt,
+        predictionCounts: predictionCounts,
+        tiebreakerRound: tiebreakerRound,
+        rules: newRules,
+        lineupA: lineupA,
+        lineupB: lineupB,
+        toss: toss,
+      );
 
   /// Computes the result from scores the moment they're saved, mirroring the
   /// source spreadsheet's Winner formula (tie modeled for fidelity even though

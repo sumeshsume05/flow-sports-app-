@@ -156,7 +156,7 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
                             ),
                           ),
                           Text(
-                            'Each match takes its own copy when you set it up, and you can still adjust that one match.',
+                            'Each match takes its own copy when it is generated, and you can still adjust that one match.',
                             style: textTheme.bodySmall,
                           ),
                         ],
