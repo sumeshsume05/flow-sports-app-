@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../core/utils/standings_calculator.dart';
 import '../../models/match.dart';
 import '../../models/standing_row.dart';
@@ -9,15 +8,16 @@ import '../../services/firestore_service.dart';
 import '../../widgets/standings_table.dart';
 
 class StandingsScreen extends StatelessWidget {
+  final String sport;
   final String category;
   final String season;
   final _firestoreService = FirestoreService();
   late final _teamsStream =
-      _firestoreService.watchTeams(sport: Sport.badminton, category: category, season: season);
+      _firestoreService.watchTeams(sport: sport, category: category, season: season);
   late final _matchesStream =
-      _firestoreService.watchMatches(sport: Sport.badminton, category: category, season: season);
+      _firestoreService.watchMatches(sport: sport, category: category, season: season);
 
-  StandingsScreen({super.key, required this.category, required this.season});
+  StandingsScreen({super.key, required this.sport, required this.category, required this.season});
 
   @override
   Widget build(BuildContext context) {

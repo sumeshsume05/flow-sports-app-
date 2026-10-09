@@ -7,9 +7,12 @@ import '../../core/constants.dart';
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
+import '../../core/sports.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
 import '../../state/announcement_state.dart';
+import '../../state/auth_state.dart';
+import '../../state/enabled_sports_state.dart';
 
 class HomeScreen extends StatelessWidget {
   final String season;
@@ -21,6 +24,11 @@ class HomeScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final announcement = context.watch<AnnouncementState>().text;
+    final enabledSports = context.watch<EnabledSportsState>();
+    final isAdmin = context.watch<AuthState>().isAdmin;
+    // Viewers only see sports the admin has switched on; an admin previewing
+    // the live app sees every sport, with unfinished ones marked.
+    final sports = isAdmin ? Sport.all : enabledSports.viewerSports;
 
     return Scaffold(
       appBar: AppBar(
@@ -87,20 +95,38 @@ class HomeScreen extends StatelessWidget {
               ),
             ).animate().fadeIn(duration: 300.ms).slideY(begin: -0.05, end: 0),
           ],
-          const SizedBox(height: AppSpacing.lg),
-          Text('Badminton', style: textTheme.titleLarge),
-          const SizedBox(height: AppSpacing.sm),
-          for (var i = 0; i < Category.all.length; i++) ...[
-            if (i > 0) const SizedBox(height: AppSpacing.md),
-            _CategoryCard(
-              title: '${categoryLabel(Category.all[i])} Doubles',
-              subtitle: 'Standings, live scores & the knockout bracket',
-              icon: Icons.sports_tennis,
-              accent: i.isEven ? AppColors.boysAccent : AppColors.girlsAccent,
-              category: Category.all[i],
-              season: season,
-              onTap: () => context.push('/matches?category=${Category.all[i]}'),
-            ).animate(delay: (80 * (i + 1)).ms).fadeIn(duration: 300.ms).slideY(begin: 0.08, end: 0),
+          for (final sport in sports) ...[
+            const SizedBox(height: AppSpacing.lg),
+            Row(
+              children: [
+                Text(sportConfig(sport).label, style: textTheme.titleLarge),
+                if (!enabledSports.isEnabled(sport)) ...[
+                  const SizedBox(width: AppSpacing.sm),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs + 2, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHigh,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    ),
+                    child: Text('Hidden from viewers', style: textTheme.labelSmall),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            for (var i = 0; i < Category.all.length; i++) ...[
+              if (i > 0) const SizedBox(height: AppSpacing.md),
+              _CategoryCard(
+                title: sportConfig(sport).categoryTitle(Category.all[i]),
+                subtitle: sportConfig(sport).subtitle,
+                icon: sportConfig(sport).icon,
+                accent: i.isEven ? AppColors.boysAccent : AppColors.girlsAccent,
+                sport: sport,
+                category: Category.all[i],
+                season: season,
+                onTap: () => context.push('/matches?sport=$sport&category=${Category.all[i]}'),
+              ).animate(delay: (80 * (i + 1)).ms).fadeIn(duration: 300.ms).slideY(begin: 0.08, end: 0),
+            ],
           ],
         ],
       ),
@@ -113,6 +139,7 @@ class _CategoryCard extends StatelessWidget {
   final String subtitle;
   final IconData icon;
   final Color accent;
+  final String sport;
   final String category;
   final String season;
   final VoidCallback onTap;
@@ -122,6 +149,7 @@ class _CategoryCard extends StatelessWidget {
     required this.subtitle,
     required this.icon,
     required this.accent,
+    required this.sport,
     required this.category,
     required this.season,
     required this.onTap,
@@ -158,7 +186,7 @@ class _CategoryCard extends StatelessWidget {
                       children: [
                         Text(title, style: textTheme.titleMedium),
                         const SizedBox(width: AppSpacing.xs),
-                        _LiveCountBadge(category: category, season: season),
+                        _LiveCountBadge(sport: sport, category: category, season: season),
                       ],
                     ),
                     const SizedBox(height: 2),
@@ -178,17 +206,18 @@ class _CategoryCard extends StatelessWidget {
 /// Small "🔴 N live now" teaser sourced from the existing matches stream —
 /// no new data model needed, just a client-side count of live matches.
 class _LiveCountBadge extends StatelessWidget {
+  final String sport;
   final String category;
   final String season;
   final _firestoreService = FirestoreService();
 
-  _LiveCountBadge({required this.category, required this.season});
+  _LiveCountBadge({required this.sport, required this.category, required this.season});
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<Match>>(
       stream: _firestoreService.watchMatches(
-          sport: Sport.badminton, category: category, season: season),
+          sport: sport, category: category, season: season),
       builder: (context, snapshot) {
         final liveCount =
             (snapshot.data ?? []).where((m) => m.status == MatchStatus.live).length;

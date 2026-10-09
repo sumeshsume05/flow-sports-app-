@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/constants.dart';
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
@@ -37,10 +36,11 @@ class _SectionPanel {
 }
 
 class GenerateBracketScreen extends StatefulWidget {
+  final String sport;
   final String category;
   final String season;
 
-  const GenerateBracketScreen({super.key, required this.category, required this.season});
+  const GenerateBracketScreen({super.key, required this.sport, required this.category, required this.season});
 
   @override
   State<GenerateBracketScreen> createState() => _GenerateBracketScreenState();
@@ -123,24 +123,24 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
 
   Future<void> _load() async {
     final teams = await _firestoreService.fetchTeams(
-      sport: Sport.badminton,
+      sport: widget.sport,
       category: widget.category,
       season: widget.season,
     );
     final leagueMatches = await _firestoreService.fetchMatches(
-      sport: Sport.badminton,
+      sport: widget.sport,
       category: widget.category,
       season: widget.season,
       stage: 'league',
     );
     final tiebreakerMatches = await _firestoreService.fetchMatches(
-      sport: Sport.badminton,
+      sport: widget.sport,
       category: widget.category,
       season: widget.season,
       stage: 'tiebreaker',
     );
     final knockoutMatches = await _firestoreService.fetchMatches(
-      sport: Sport.badminton,
+      sport: widget.sport,
       category: widget.category,
       season: widget.season,
       stage: 'knockout',
@@ -223,7 +223,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
       final section = _panels![panelIndex].section;
       final matches = generateTiebreakerMatches(
         tiedTeams: group,
-        sport: Sport.badminton,
+        sport: widget.sport,
         category: widget.category,
         season: widget.season,
         round: round,
@@ -257,7 +257,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
       final game3 = generateFinalGame3(
         teamA: kof1.teamA,
         teamB: kof1.teamB,
-        sport: Sport.badminton,
+        sport: widget.sport,
         category: widget.category,
         season: widget.season,
         matchNumber: matchNumber,
@@ -336,7 +336,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
 
     try {
       final existing = await _firestoreService.fetchMatches(
-        sport: Sport.badminton,
+        sport: widget.sport,
         category: widget.category,
         season: widget.season,
         stage: 'knockout',
@@ -354,19 +354,19 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
         matches = switch (panels[0].qualifyCount) {
           2 => generateKnockoutMatchesForTwo(
               twoSeeds: seeds,
-              sport: Sport.badminton,
+              sport: widget.sport,
               category: widget.category,
               season: widget.season,
               bestOfThreeFinal: _bestOfThreeFinal),
           3 => generateKnockoutMatchesForThree(
               threeSeeds: seeds,
-              sport: Sport.badminton,
+              sport: widget.sport,
               category: widget.category,
               season: widget.season,
               bestOfThreeFinal: _bestOfThreeFinal),
           _ => generateKnockoutMatches(
               top4Seeds: seeds,
-              sport: Sport.badminton,
+              sport: widget.sport,
               category: widget.category,
               season: widget.season,
               bestOfThreeFinal: _bestOfThreeFinal),
@@ -385,7 +385,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
         ];
         matches = generateKnockoutMatches(
           top4Seeds: top4Seeds,
-          sport: Sport.badminton,
+          sport: widget.sport,
           category: widget.category,
           season: widget.season,
           bestOfThreeFinal: _bestOfThreeFinal,
@@ -499,7 +499,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
                     ),
                   const SizedBox(height: AppSpacing.lg),
                   TextButton(
-                    onPressed: () => context.push('/bracket?category=${widget.category}'), // season carried via router's active SeasonState
+                    onPressed: () => context.push('/bracket?sport=${widget.sport}&category=${widget.category}'), // season carried via router's active SeasonState
                     child: const Text('View bracket'),
                   ),
                 ],

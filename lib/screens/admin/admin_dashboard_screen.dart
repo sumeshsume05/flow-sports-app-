@@ -10,6 +10,7 @@ import '../../core/constants.dart';
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
+import '../../core/sports.dart';
 import '../../core/utils/match_export.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
@@ -360,12 +361,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 ),
                 const SizedBox(height: AppSpacing.md),
                 for (final sport in Sport.all) ...[
-                  Text(sport[0].toUpperCase() + sport.substring(1), style: textTheme.titleLarge),
+                  Text(sportConfig(sport).label, style: textTheme.titleLarge),
                   const SizedBox(height: AppSpacing.sm),
                   for (final category in Category.all) ...[
                     Text(categoryLabel(category), style: textTheme.titleMedium),
                     const SizedBox(height: AppSpacing.xs),
-                    _CategoryActions(category: category),
+                    _CategoryActions(sport: sport, category: category),
                     const SizedBox(height: AppSpacing.md),
                   ],
                   Wrap(
@@ -441,9 +442,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 }
 
 class _CategoryActions extends StatelessWidget {
+  final String sport;
   final String category;
 
-  const _CategoryActions({required this.category});
+  const _CategoryActions({required this.sport, required this.category});
 
   @override
   Widget build(BuildContext context) {
@@ -454,22 +456,22 @@ class _CategoryActions extends StatelessWidget {
         OutlinedButton.icon(
           icon: const Icon(Icons.people_outline),
           label: const Text('Teams'),
-          onPressed: () => context.push('/admin/teams?category=$category'),
+          onPressed: () => context.push('/admin/teams?sport=$sport&category=$category'),
         ),
         OutlinedButton.icon(
           icon: const Icon(Icons.list_alt),
           label: const Text('Matches'),
-          onPressed: () => context.push('/admin/matches?category=$category'),
+          onPressed: () => context.push('/admin/matches?sport=$sport&category=$category'),
         ),
         OutlinedButton.icon(
           icon: const Icon(Icons.auto_awesome),
           label: const Text('Generate Schedule'),
-          onPressed: () => context.push('/admin/schedule/generate?category=$category'),
+          onPressed: () => context.push('/admin/schedule/generate?sport=$sport&category=$category'),
         ),
         OutlinedButton.icon(
           icon: const Icon(Icons.account_tree_outlined),
           label: const Text('Generate Bracket'),
-          onPressed: () => context.push('/admin/bracket/generate?category=$category'),
+          onPressed: () => context.push('/admin/bracket/generate?sport=$sport&category=$category'),
         ),
       ],
     );

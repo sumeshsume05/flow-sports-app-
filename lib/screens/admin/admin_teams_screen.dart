@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../models/team.dart';
@@ -8,10 +7,11 @@ import '../../services/firestore_service.dart';
 import '../../widgets/shimmer_loading.dart';
 
 class AdminTeamsScreen extends StatefulWidget {
+  final String sport;
   final String category;
   final String season;
 
-  const AdminTeamsScreen({super.key, required this.category, required this.season});
+  const AdminTeamsScreen({super.key, required this.sport, required this.category, required this.season});
 
   @override
   State<AdminTeamsScreen> createState() => _AdminTeamsScreenState();
@@ -20,7 +20,7 @@ class AdminTeamsScreen extends StatefulWidget {
 class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
   final _firestoreService = FirestoreService();
   late final _teamsStream = _firestoreService.watchTeams(
-      sport: Sport.badminton, category: widget.category, season: widget.season);
+      sport: widget.sport, category: widget.category, season: widget.season);
 
   void _showWriteError(Object e) {
     if (!mounted) return;
@@ -51,7 +51,7 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
     try {
       await _firestoreService.addTeam(Team(
         id: '',
-        sport: Sport.badminton,
+        sport: widget.sport,
         category: widget.category,
         name: name,
         season: widget.season,

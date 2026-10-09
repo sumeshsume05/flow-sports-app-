@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/constants.dart';
 import '../../core/design/app_spacing.dart';
 import '../../core/utils/match_grouping.dart';
 import '../../models/match.dart';
@@ -11,13 +10,14 @@ import '../../widgets/match_section_header.dart';
 import '../../widgets/shimmer_loading.dart';
 
 class AdminMatchListScreen extends StatelessWidget {
+  final String sport;
   final String category;
   final String season;
   final _firestoreService = FirestoreService();
   late final _matchesStream =
-      _firestoreService.watchMatches(sport: Sport.badminton, category: category, season: season);
+      _firestoreService.watchMatches(sport: sport, category: category, season: season);
 
-  AdminMatchListScreen({super.key, required this.category, required this.season});
+  AdminMatchListScreen({super.key, required this.sport, required this.category, required this.season});
 
   Future<void> _confirmDelete(BuildContext context, Match match) async {
     final confirmed = await showDialog<bool>(
@@ -51,7 +51,7 @@ class AdminMatchListScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Matches')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/admin/matches/new?category=$category'),
+        onPressed: () => context.push('/admin/matches/new?sport=$sport&category=$category'),
         icon: const Icon(Icons.add),
         label: const Text('New match'),
       ),

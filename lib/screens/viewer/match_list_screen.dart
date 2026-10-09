@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
+import '../../core/sports.dart';
 import '../../core/utils/match_grouping.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
@@ -14,10 +15,11 @@ import '../../widgets/shimmer_loading.dart';
 enum _Filter { all, upcoming, live, completed }
 
 class MatchListScreen extends StatefulWidget {
+  final String sport;
   final String category;
   final String season;
 
-  const MatchListScreen({super.key, required this.category, required this.season});
+  const MatchListScreen({super.key, required this.sport, required this.category, required this.season});
 
   @override
   State<MatchListScreen> createState() => _MatchListScreenState();
@@ -26,14 +28,14 @@ class MatchListScreen extends StatefulWidget {
 class _MatchListScreenState extends State<MatchListScreen> {
   final _firestoreService = FirestoreService();
   late final _matchesStream = _firestoreService.watchMatches(
-      sport: Sport.badminton, category: widget.category, season: widget.season);
+      sport: widget.sport, category: widget.category, season: widget.season);
   _Filter _filter = _Filter.all;
   String _search = '';
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('${categoryLabel(widget.category)} Badminton')),
+      appBar: AppBar(title: Text('${categoryLabel(widget.category)} ${sportConfig(widget.sport).label}')),
       body: Column(
         children: [
           Padding(
@@ -55,12 +57,12 @@ class _MatchListScreenState extends State<MatchListScreen> {
                 _FilterButton(
                   label: 'Standings',
                   icon: Icons.leaderboard_outlined,
-                  onTap: () => context.push('/standings?category=${widget.category}'),
+                  onTap: () => context.push('/standings?sport=${widget.sport}&category=${widget.category}'),
                 ),
                 _FilterButton(
                   label: 'Bracket',
                   icon: Icons.account_tree_outlined,
-                  onTap: () => context.push('/bracket?category=${widget.category}'),
+                  onTap: () => context.push('/bracket?sport=${widget.sport}&category=${widget.category}'),
                 ),
               ],
             ),

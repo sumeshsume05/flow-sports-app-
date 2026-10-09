@@ -17,6 +17,7 @@ import '../screens/viewer/home_screen.dart';
 import '../screens/viewer/match_detail_screen.dart';
 import '../screens/viewer/match_list_screen.dart';
 import '../screens/viewer/standings_screen.dart';
+import '../core/sports.dart';
 import '../state/auth_state.dart';
 import '../state/season_state.dart';
 import '../widgets/chat_fab.dart';
@@ -34,6 +35,11 @@ GoRouter buildRouter(AuthState authState) {
   // plain constructor param — same pattern as the existing `category` query
   // param — rather than every screen reaching into Provider itself.
   String season(BuildContext context) => context.watch<SeasonState>().activeSeasonId ?? '';
+
+  // Which sport a sport-scoped screen shows. Read from the `sport` query
+  // param next to `category`; a missing/unknown value means badminton so
+  // links that predate the param keep working.
+  String sport(GoRouterState state) => sportFromQuery(state.uri.queryParameters['sport']);
 
   return GoRouter(
     navigatorKey: rootNavigatorKey,
@@ -66,6 +72,7 @@ GoRouter buildRouter(AuthState authState) {
           GoRoute(
             path: '/matches',
             builder: (context, state) => MatchListScreen(
+              sport: sport(state),
               category: state.uri.queryParameters['category'] ?? '',
               season: season(context),
             ),
@@ -77,6 +84,7 @@ GoRouter buildRouter(AuthState authState) {
           GoRoute(
             path: '/standings',
             builder: (context, state) => StandingsScreen(
+              sport: sport(state),
               category: state.uri.queryParameters['category'] ?? '',
               season: season(context),
             ),
@@ -98,6 +106,7 @@ GoRouter buildRouter(AuthState authState) {
       GoRoute(
         path: '/bracket',
         builder: (context, state) => BracketScreen(
+          sport: sport(state),
           category: state.uri.queryParameters['category'] ?? '',
           season: season(context),
         ),
@@ -108,6 +117,7 @@ GoRouter buildRouter(AuthState authState) {
       GoRoute(
         path: '/admin/teams',
         builder: (context, state) => AdminTeamsScreen(
+          sport: sport(state),
           category: state.uri.queryParameters['category'] ?? '',
           season: season(context),
         ),
@@ -115,6 +125,7 @@ GoRouter buildRouter(AuthState authState) {
       GoRoute(
         path: '/admin/matches',
         builder: (context, state) => AdminMatchListScreen(
+          sport: sport(state),
           category: state.uri.queryParameters['category'] ?? '',
           season: season(context),
         ),
@@ -122,6 +133,7 @@ GoRouter buildRouter(AuthState authState) {
       GoRoute(
         path: '/admin/matches/new',
         builder: (context, state) => AdminMatchFormScreen(
+          sport: sport(state),
           category: state.uri.queryParameters['category'] ?? '',
           season: season(context),
         ),
@@ -133,6 +145,7 @@ GoRouter buildRouter(AuthState authState) {
       GoRoute(
         path: '/admin/schedule/generate',
         builder: (context, state) => GenerateScheduleScreen(
+          sport: sport(state),
           category: state.uri.queryParameters['category'] ?? '',
           season: season(context),
         ),
@@ -140,6 +153,7 @@ GoRouter buildRouter(AuthState authState) {
       GoRoute(
         path: '/admin/bracket/generate',
         builder: (context, state) => GenerateBracketScreen(
+          sport: sport(state),
           category: state.uri.queryParameters['category'] ?? '',
           season: season(context),
         ),
