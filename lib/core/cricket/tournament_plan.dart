@@ -25,6 +25,8 @@ CricketStage? cricketStageForMatch(MatchStage stage, String matchCode) {
       return CricketStage.league;
     case MatchStage.tiebreaker:
       return CricketStage.tiebreaker;
+    case MatchStage.friendly:
+      return null; // practice match: uses the default overs
     case MatchStage.knockout:
       if (matchCode.startsWith('KOF')) return CricketStage.finalGame;
       if (matchCode == 'KO3') return CricketStage.qualifier;
