@@ -506,6 +506,12 @@ class _CategoryActions extends StatelessWidget {
       spacing: AppSpacing.sm,
       runSpacing: AppSpacing.sm,
       children: [
+        if (sport == Sport.cricket)
+          FilledButton.tonalIcon(
+            icon: const Icon(Icons.account_tree_outlined),
+            label: const Text('Plan & sections'),
+            onPressed: () => context.push('/admin/plan?sport=$sport&category=$category'),
+          ),
         OutlinedButton.icon(
           icon: const Icon(Icons.people_outline),
           label: const Text('Teams'),

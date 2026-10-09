@@ -4,6 +4,7 @@ import '../core/constants.dart';
 import '../core/cricket/cricket_rules.dart';
 import '../core/cricket/cricket_toss.dart';
 import '../core/cricket/match_rules_stamp.dart';
+import '../core/cricket/tournament_plan.dart';
 import '../core/utils/team_rename.dart';
 import '../models/chat_message.dart';
 import '../models/commentary_entry.dart';
@@ -252,9 +253,58 @@ class FirestoreService {
   /// never alters a match that already exists. Other sports pass through
   /// untouched, with no extra read.
   Future<List<Match>> _withCricketRules(List<Match> matches) async {
-    if (!matches.any(needsCricketRules)) return matches;
+    final needing = matches.where(needsCricketRules).toList();
+    if (needing.isEmpty) return matches;
     final doc = await _db.collection(configCollection).doc('cricketRules').get();
-    return stampCricketRules(matches, CricketRules.fromMap(doc.data()));
+    // One read per distinct category+season among the new matches (normally one).
+    final plans = <String, CricketTournamentConfig>{};
+    for (final m in needing) {
+      final key = cricketPlanKey(m.category, m.season);
+      if (plans.containsKey(key)) continue;
+      final planDoc = await _db
+          .collection(configCollection)
+          .doc(cricketPlanDocId(m.category, m.season))
+          .get();
+      plans[key] = CricketTournamentConfig.fromMap(planDoc.data());
+    }
+    return stampCricketRules(matches, CricketRules.fromMap(doc.data()), plans: plans);
+  }
+
+  /// The admin's plan (sections, qualifiers, per-stage overs) for one
+  /// category and season; the plain defaults until one is saved.
+  Stream<CricketTournamentConfig> watchCricketPlan(String category, String season) {
+    return _db
+        .collection(configCollection)
+        .doc(cricketPlanDocId(category, season))
+        .snapshots()
+        .map((doc) => CricketTournamentConfig.fromMap(doc.data()));
+  }
+
+  Future<void> saveCricketPlan(String category, String season, CricketTournamentConfig config) async {
+    try {
+      await _db
+          .collection(configCollection)
+          .doc(cricketPlanDocId(category, season))
+          .set(config.toMap());
+    } catch (e) {
+      throw FirestoreWriteException('Could not save the tournament plan.', e);
+    }
+  }
+
+  /// Writes every team's league section in one batch (null clears it).
+  Future<void> saveTeamSections(Map<String, String?> sectionByTeamId) async {
+    try {
+      final entries = sectionByTeamId.entries.toList();
+      for (var i = 0; i < entries.length; i += 400) {
+        final batch = _db.batch();
+        for (final e in entries.skip(i).take(400)) {
+          batch.update(_db.collection(teamsCollection).doc(e.key), {'section': e.value});
+        }
+        await batch.commit();
+      }
+    } catch (e) {
+      throw FirestoreWriteException('Could not save the sections.', e);
+    }
   }
 
   Future<void> addMatch(Match match) async {

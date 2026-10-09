@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants.dart';
+import '../../core/cricket/tournament_plan.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../models/team.dart';
@@ -103,7 +104,11 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
     return parts.isEmpty ? null : Text(parts.join(' · '));
   }
 
-  static const _sectionOptions = ['None', 'A', 'B'];
+  /// Badminton's league is fixed at two sections; cricket can have up to
+  /// [maxSections] (planned on the Plan screen).
+  List<String> get _sectionOptions => widget.sport == Sport.cricket
+      ? ['None', for (var i = 0; i < maxSections; i++) sectionLetter(i)]
+      : const ['None', 'A', 'B'];
 
   /// Suggests a balanced 2-way split, alternating teams (in their current
   /// list order) A, B, A, B, ... — a starting point, not a final decision:
@@ -216,11 +221,18 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
               if (i == 0) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.auto_awesome),
-                    label: const Text('Auto-arrange into sections'),
-                    onPressed: () => _autoArrangeDialog(teams),
-                  ),
+                  child: widget.sport == Sport.cricket
+                      ? OutlinedButton.icon(
+                          icon: const Icon(Icons.account_tree_outlined),
+                          label: const Text('Plan sections & matches'),
+                          onPressed: () => context.push(
+                              '/admin/plan?sport=${widget.sport}&category=${widget.category}'),
+                        )
+                      : OutlinedButton.icon(
+                          icon: const Icon(Icons.auto_awesome),
+                          label: const Text('Auto-arrange into sections'),
+                          onPressed: () => _autoArrangeDialog(teams),
+                        ),
                 );
               }
               final team = teams[i - 1];

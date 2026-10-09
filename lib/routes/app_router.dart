@@ -11,6 +11,7 @@ import '../screens/admin/admin_match_list_screen.dart';
 import '../screens/admin/admin_players_screen.dart';
 import '../screens/admin/admin_seasons_screen.dart';
 import '../screens/admin/admin_teams_screen.dart';
+import '../screens/admin/cricket_plan_screen.dart';
 import '../screens/admin/cricket_rules_screen.dart';
 import '../screens/admin/generate_bracket_screen.dart';
 import '../screens/admin/generate_schedule_screen.dart';
@@ -119,6 +120,13 @@ GoRouter buildRouter(AuthState authState) {
       GoRoute(path: '/admin', builder: (context, state) => const AdminDashboardScreen()),
       GoRoute(path: '/admin/seasons', builder: (context, state) => const AdminSeasonsScreen()),
       GoRoute(path: '/admin/cricket/rules', builder: (context, state) => const CricketRulesScreen()),
+      GoRoute(
+        path: '/admin/plan',
+        builder: (context, state) => CricketPlanScreen(
+          category: state.uri.queryParameters['category'] ?? '',
+          season: season(context),
+        ),
+      ),
       GoRoute(
         path: '/admin/teams/:id/players',
         builder: (context, state) => AdminPlayersScreen(teamId: state.pathParameters['id']!),

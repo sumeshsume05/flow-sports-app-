@@ -29,3 +29,17 @@ List<String> squadProblems({
       '$teamName: at most ${rules.squadSize} players (you picked $selectedCount).',
   ];
 }
+
+/// Heads-up (never a block) when the two sides have different numbers of
+/// players. Each side's innings simply ends when its own batters run out, so
+/// the match still works — but the admin should know it isn't level.
+String? unequalSquadsWarning({
+  required String nameA,
+  required int countA,
+  required String nameB,
+  required int countB,
+}) {
+  if (countA == countB) return null;
+  return 'Unequal squads: $nameA has $countA players, $nameB has $countB. This is allowed — each '
+      'side\'s innings ends when its own batters are out — but the match isn\'t level.';
+}

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/cricket/cricket_rules.dart';
+import '../core/cricket/tournament_plan.dart';
 import '../core/design/app_spacing.dart';
 
 /// Editor for a [CricketRules] — used both for the tournament default
@@ -61,7 +62,14 @@ class _CricketRulesFormState extends State<CricketRulesForm> {
           value: r.overs,
           min: 1,
           max: 50,
-          onChanged: (v) => _set(r.copyWith(overs: v)),
+          // If the bowler limit is still the suggested one for the old overs, keep
+          // it in step with the new overs (an admin-customised limit is left alone).
+          onChanged: (v) => _set(r.copyWith(
+            overs: v,
+            maxOversPerBowler: r.maxOversPerBowler == suggestedMaxOversPerBowler(r.overs)
+                ? suggestedMaxOversPerBowler(v)
+                : r.maxOversPerBowler,
+          )),
         ),
         _StepperRow(
           label: 'Balls per over',
@@ -87,7 +95,7 @@ class _CricketRulesFormState extends State<CricketRulesForm> {
           label: 'Limit overs per bowler',
           value: r.maxOversPerBowler != null,
           onChanged: (v) => _set(v
-              ? r.copyWith(maxOversPerBowler: (r.overs / 3).ceil().clamp(1, r.overs))
+              ? r.copyWith(maxOversPerBowler: suggestedMaxOversPerBowler(r.overs).clamp(1, r.overs))
               : r.copyWith(clearMaxOversPerBowler: true)),
         ),
         if (r.maxOversPerBowler != null)
