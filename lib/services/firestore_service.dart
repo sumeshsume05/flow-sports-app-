@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../core/constants.dart';
 import '../core/cricket/cricket_rules.dart';
 import '../core/cricket/cricket_toss.dart';
+import '../core/cricket/match_rules_stamp.dart';
 import '../core/utils/team_rename.dart';
 import '../models/chat_message.dart';
 import '../models/commentary_entry.dart';
@@ -245,9 +246,21 @@ class FirestoreService {
     }
   }
 
+  /// Cricket matches are stamped with the tournament's current default rules
+  /// at the moment they are created (schedule, knockout, tie-breaker, decider
+  /// or a manual match all come through here), so changing the default later
+  /// never alters a match that already exists. Other sports pass through
+  /// untouched, with no extra read.
+  Future<List<Match>> _withCricketRules(List<Match> matches) async {
+    if (!matches.any(needsCricketRules)) return matches;
+    final doc = await _db.collection(configCollection).doc('cricketRules').get();
+    return stampCricketRules(matches, CricketRules.fromMap(doc.data()));
+  }
+
   Future<void> addMatch(Match match) async {
     try {
-      await _db.collection(matchesCollection).add(match.toFirestore());
+      final stamped = (await _withCricketRules([match])).single;
+      await _db.collection(matchesCollection).add(stamped.toFirestore());
     } catch (e) {
       throw FirestoreWriteException('Could not add match.', e);
     }
@@ -258,8 +271,9 @@ class FirestoreService {
   /// for that sport+category+stage to avoid accidental double-generation.
   Future<void> addMatchesBatch(List<Match> matches) async {
     try {
+      final stamped = await _withCricketRules(matches);
       final batch = _db.batch();
-      for (final m in matches) {
+      for (final m in stamped) {
         final ref = _db.collection(matchesCollection).doc();
         batch.set(ref, m.toFirestore());
       }

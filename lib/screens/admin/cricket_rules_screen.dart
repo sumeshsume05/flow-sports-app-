@@ -6,8 +6,9 @@ import '../../services/firestore_service.dart';
 import '../../widgets/cricket_rules_form.dart';
 
 /// Tournament-wide default cricket rules. A match takes its own copy of
-/// these when it is first set up, so changing the default later never alters
-/// a match that already has its setup (or scoring) saved.
+/// these when it is generated (schedule, knockout, tie-breaker or manual
+/// match), so changing the default later never alters a match that already
+/// exists.
 class CricketRulesScreen extends StatefulWidget {
   const CricketRulesScreen({super.key});
 
@@ -30,7 +31,7 @@ class _CricketRulesScreenState extends State<CricketRulesScreen> {
       if (!mounted) return;
       setState(() => _edited = null);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Saved. New matches use these rules; matches already set up keep theirs.'),
+        content: Text('Saved. Matches generated from now on use these rules; existing matches keep theirs.'),
       ));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
@@ -51,8 +52,8 @@ class _CricketRulesScreenState extends State<CricketRulesScreen> {
             padding: const EdgeInsets.all(AppSpacing.md),
             children: [
               Text(
-                'These are the default rules for cricket matches. Each match gets its own copy when you '
-                'set it up, and you can still change that one match without affecting the others.',
+                'These are the default rules for cricket matches. Each match gets its own copy when it is '
+                'generated, and you can still change that one match without affecting the others.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               CricketRulesForm(
