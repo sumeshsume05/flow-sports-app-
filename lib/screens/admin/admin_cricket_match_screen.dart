@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/cricket/cricket_rules.dart';
 import '../../core/cricket/cricket_toss.dart';
 import '../../core/cricket/rules_summary.dart';
+import '../../core/cricket/tournament_plan.dart';
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
@@ -166,6 +167,8 @@ class _AdminCricketMatchScreenState extends State<AdminCricketMatchScreen> {
     }
   }
 
+  static String? _withName(String team, String? warning) => warning == null ? null : '$team: $warning';
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<Match?>(
@@ -225,6 +228,21 @@ class _AdminCricketMatchScreenState extends State<AdminCricketMatchScreen> {
         ...squadProblems(selectedCount: _selectedA!.length, rules: rules, teamName: nameA),
       if (teamB != null && _selectedB != null)
         ...squadProblems(selectedCount: _selectedB!.length, rules: rules, teamName: nameB),
+    ];
+    // Heads-up only — never blocks saving.
+    final warnings = <String>[
+      if (teamA != null && teamB != null && _selectedA != null && _selectedB != null &&
+          _selectedA!.length >= 2 && _selectedB!.length >= 2)
+        ?unequalSquadsWarning(
+          nameA: nameA,
+          countA: _selectedA!.length,
+          nameB: nameB,
+          countB: _selectedB!.length,
+        ),
+      if (teamA != null && _selectedA != null && _selectedA!.length >= 2)
+        ?_withName(nameA, bowlerSupplyWarning(squadCount: _selectedA!.length, rules: rules)),
+      if (teamB != null && _selectedB != null && _selectedB!.length >= 2)
+        ?_withName(nameB, bowlerSupplyWarning(squadCount: _selectedB!.length, rules: rules)),
     ];
     final teamsKnown = teamA != null && teamB != null;
     final canSave = teamsKnown && problems.isEmpty && !_saving;
@@ -338,6 +356,11 @@ class _AdminCricketMatchScreenState extends State<AdminCricketMatchScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: AppSpacing.xs),
                 child: Text(p, style: textTheme.bodySmall?.copyWith(color: scheme.error)),
+              ),
+            for (final w in warnings)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.xs),
+                child: Text('⚠ $w', style: textTheme.bodySmall?.copyWith(color: AppColors.warningAmber)),
               ),
           ]),
           card('Toss', [
