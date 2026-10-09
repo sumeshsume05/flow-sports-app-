@@ -13,6 +13,11 @@ class Category {
   static const boys = 'boys';
   static const girls = 'girls';
   static const all = [boys, girls];
+
+  /// The throwaway category the admin's Test Lab writes to. Deliberately NOT
+  /// in [all]: every viewer screen and the CSV export loop over [all], so
+  /// test teams and matches never appear to viewers or in real exports.
+  static const test = 'test';
 }
 
 /// Human-readable label for a category — single source of truth, replacing
@@ -21,6 +26,7 @@ class Category {
 String categoryLabel(String category) => switch (category) {
       Category.boys => 'Boys',
       Category.girls => 'Girls',
+      Category.test => 'Test',
       _ => category,
     };
 

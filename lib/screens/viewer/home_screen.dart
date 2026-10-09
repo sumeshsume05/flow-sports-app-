@@ -127,6 +127,21 @@ class HomeScreen extends StatelessWidget {
                 onTap: () => context.push('/matches?sport=$sport&category=${Category.all[i]}'),
               ).animate(delay: (80 * (i + 1)).ms).fadeIn(duration: 300.ms).slideY(begin: 0.08, end: 0),
             ],
+            // Admin only: the Test Lab's throwaway category, so the real viewer
+            // screens can be tried on test data. Viewers never get this card.
+            if (isAdmin) ...[
+              const SizedBox(height: AppSpacing.md),
+              _CategoryCard(
+                title: '${sportConfig(sport).label} — Test data',
+                subtitle: 'Admin only — viewers never see this',
+                icon: Icons.science_outlined,
+                accent: scheme.outline,
+                sport: sport,
+                category: Category.test,
+                season: season,
+                onTap: () => context.push('/matches?sport=$sport&category=${Category.test}'),
+              ),
+            ],
           ],
         ],
       ),

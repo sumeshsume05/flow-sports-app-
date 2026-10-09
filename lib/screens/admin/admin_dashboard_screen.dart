@@ -304,6 +304,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.sm),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.science_outlined),
+                    title: const Text('Test Lab'),
+                    subtitle: const Text('Make test teams, try things out, reset — real data is never touched'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => context.push('/admin/test-lab'),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
                 Builder(builder: (context) {
                   final enabledSports = context.watch<EnabledSportsState>();
                   return Card(

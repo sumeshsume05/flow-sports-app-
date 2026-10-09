@@ -11,6 +11,7 @@ import '../screens/admin/admin_match_list_screen.dart';
 import '../screens/admin/admin_players_screen.dart';
 import '../screens/admin/admin_seasons_screen.dart';
 import '../screens/admin/admin_teams_screen.dart';
+import '../screens/admin/admin_test_lab_screen.dart';
 import '../screens/admin/cricket_rules_screen.dart';
 import '../screens/admin/generate_bracket_screen.dart';
 import '../screens/admin/generate_schedule_screen.dart';
@@ -118,6 +119,7 @@ GoRouter buildRouter(AuthState authState) {
       GoRoute(path: '/admin/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/admin', builder: (context, state) => const AdminDashboardScreen()),
       GoRoute(path: '/admin/seasons', builder: (context, state) => const AdminSeasonsScreen()),
+      GoRoute(path: '/admin/test-lab', builder: (context, state) => const AdminTestLabScreen()),
       GoRoute(path: '/admin/cricket/rules', builder: (context, state) => const CricketRulesScreen()),
       GoRoute(
         path: '/admin/teams/:id/players',
