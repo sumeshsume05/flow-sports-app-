@@ -44,6 +44,16 @@ final Map<String, SportConfig> sportConfigs = {
     categoryTitle: (category) => '${categoryLabel(category)} Doubles',
     subtitle: 'Standings, live scores & the knockout bracket',
   ),
+  // Ships hidden from viewers until an admin switches it on (Admin >
+  // dashboard > Sports shown to viewers).
+  Sport.cricket: SportConfig(
+    id: Sport.cricket,
+    label: 'Cricket',
+    icon: Icons.sports_cricket,
+    categoryTitle: (category) => '${categoryLabel(category)} Cricket',
+    subtitle: 'Live scores, scorecards & the points table',
+    enabledByDefault: false,
+  ),
 };
 
 /// Falls back to a bare config for an unknown id (e.g. a doc written by a

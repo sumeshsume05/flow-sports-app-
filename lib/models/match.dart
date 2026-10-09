@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../core/cricket/cricket_rules.dart';
+import '../core/cricket/cricket_toss.dart';
+
 enum MatchStage { league, knockout, tiebreaker }
 
 enum MatchStatus { upcoming, live, completed }
@@ -124,6 +127,16 @@ class Match {
   /// the earlier one's, since both can involve overlapping/identical teams.
   final int? tiebreakerRound;
 
+  /// Cricket only. This match's own copy of the rules (taken from the
+  /// tournament default when the match is first set up, so a later change to
+  /// the default never rewrites a match already underway), the player ids
+  /// picked for each side, and the toss. Absent/empty until set up, and for
+  /// every other sport.
+  final CricketRules? rules;
+  final List<String> lineupA;
+  final List<String> lineupB;
+  final CricketToss? toss;
+
   Match({
     required this.id,
     required this.sport,
@@ -152,6 +165,10 @@ class Match {
     this.lastCommentaryAt,
     this.predictionCounts = const {},
     this.tiebreakerRound,
+    this.rules,
+    this.lineupA = const [],
+    this.lineupB = const [],
+    this.toss,
   });
 
   factory Match.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -188,6 +205,14 @@ class Match {
               ?.map((k, v) => MapEntry(k, v as int)) ??
           const {},
       tiebreakerRound: data['tiebreakerRound'] as int?,
+      rules: data['rules'] is Map
+          ? CricketRules.fromMap(Map<String, dynamic>.from(data['rules'] as Map))
+          : null,
+      lineupA: (data['lineupA'] as List?)?.cast<String>() ?? const [],
+      lineupB: (data['lineupB'] as List?)?.cast<String>() ?? const [],
+      toss: data['toss'] is Map
+          ? CricketToss.fromMap(Map<String, dynamic>.from(data['toss'] as Map))
+          : null,
     );
   }
 

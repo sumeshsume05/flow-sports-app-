@@ -79,7 +79,7 @@ class AdminMatchListScreen extends StatelessWidget {
                 for (final m in section.matches)
                   MatchCard(
                     match: m,
-                    onTap: () => context.push('/admin/matches/${m.id}/edit'),
+                    onTap: () => context.push('/admin/matches/${m.id}/edit?sport=${m.sport}'),
                     showReactions: false,
                     trailing: IconButton(
                       icon: const Icon(Icons.delete_outline),
