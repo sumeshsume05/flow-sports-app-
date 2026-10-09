@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/constants.dart';
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
@@ -10,10 +9,11 @@ import '../../models/team.dart';
 import '../../services/firestore_service.dart';
 
 class GenerateScheduleScreen extends StatefulWidget {
+  final String sport;
   final String category;
   final String season;
 
-  const GenerateScheduleScreen({super.key, required this.category, required this.season});
+  const GenerateScheduleScreen({super.key, required this.sport, required this.category, required this.season});
 
   @override
   State<GenerateScheduleScreen> createState() => _GenerateScheduleScreenState();
@@ -22,7 +22,7 @@ class GenerateScheduleScreen extends StatefulWidget {
 class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
   final _firestoreService = FirestoreService();
   late final _teamsStream = _firestoreService.watchTeams(
-      sport: Sport.badminton, category: widget.category, season: widget.season);
+      sport: widget.sport, category: widget.category, season: widget.season);
   bool _generating = false;
   String? _message;
 
@@ -46,7 +46,7 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
 
     try {
       final existing = await _firestoreService.fetchMatches(
-        sport: Sport.badminton,
+        sport: widget.sport,
         category: widget.category,
         season: widget.season,
         stage: 'league',
@@ -62,13 +62,13 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
       final matches = sections == null
           ? generateLeagueMatches(
               teams: teams,
-              sport: Sport.badminton,
+              sport: widget.sport,
               category: widget.category,
               season: widget.season,
             )
           : generateSectionedLeagueMatches(
               teams: teams,
-              sport: Sport.badminton,
+              sport: widget.sport,
               category: widget.category,
               season: widget.season,
             );
@@ -151,7 +151,7 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
                   ),
                 const Spacer(),
                 TextButton(
-                  onPressed: () => context.push('/admin/matches?category=${widget.category}'),
+                  onPressed: () => context.push('/admin/matches?sport=${widget.sport}&category=${widget.category}'),
                   child: const Text('View matches'),
                 ),
               ],

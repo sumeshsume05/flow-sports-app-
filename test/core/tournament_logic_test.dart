@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:flow_sports_app/core/constants.dart';
+import 'package:flow_sports_app/core/sports.dart';
 import 'package:flow_sports_app/core/utils/bracket_resolver.dart';
 import 'package:flow_sports_app/core/utils/match_export.dart';
 import 'package:flow_sports_app/core/utils/match_grouping.dart';
@@ -10,6 +12,7 @@ import 'package:flow_sports_app/core/utils/team_rename.dart';
 import 'package:flow_sports_app/models/match.dart';
 import 'package:flow_sports_app/models/standing_row.dart';
 import 'package:flow_sports_app/models/team.dart';
+import 'package:flow_sports_app/state/enabled_sports_state.dart';
 
 Team _team(String id, String name, {String? section}) => Team(
       id: id,
@@ -1400,6 +1403,34 @@ void main() {
       final ko = m('ko', const TeamRef(teamId: 't1', name: 'Old'), TeamRef.tbd, stage: MatchStage.knockout);
       final updates = matchesNeedingNameUpdate([ko], teamId: 't1', newName: 'New');
       expect(updates.single.fields, {'teamA.name': 'New'});
+    });
+  });
+
+  group('sport registry', () {
+    test('sportFromQuery defaults missing/unknown values to badminton', () {
+      expect(sportFromQuery(null), 'badminton');
+      expect(sportFromQuery(''), 'badminton');
+      expect(sportFromQuery('chess-not-added-yet'), 'badminton');
+      expect(sportFromQuery('badminton'), 'badminton');
+    });
+
+    test('every Sport.all entry has a registry config with matching id', () {
+      for (final id in Sport.all) {
+        expect(sportConfigs.containsKey(id), isTrue, reason: '$id missing from sportConfigs');
+        expect(sportConfigs[id]!.id, id);
+      }
+    });
+
+    test('badminton keeps its original Home card wording', () {
+      expect(sportConfig('badminton').label, 'Badminton');
+      expect(sportConfig('badminton').categoryTitle('boys'), 'Boys Doubles');
+      expect(sportConfig('badminton').categoryTitle('girls'), 'Girls Doubles');
+    });
+
+    test('resolveSportEnabled: explicit flag wins, otherwise the sport default', () {
+      expect(resolveSportEnabled(const {}, 'badminton'), isTrue); // no doc = unchanged for existing installs
+      expect(resolveSportEnabled(const {'badminton': false}, 'badminton'), isFalse);
+      expect(resolveSportEnabled(const {'badminton': true}, 'badminton'), isTrue);
     });
   });
 }

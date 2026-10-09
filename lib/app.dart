@@ -11,6 +11,7 @@ import 'state/app_update_state.dart';
 import 'state/auth_state.dart';
 import 'state/chat_settings_state.dart';
 import 'state/connectivity_state.dart';
+import 'state/enabled_sports_state.dart';
 import 'state/season_state.dart';
 import 'widgets/app_update_gate.dart';
 import 'widgets/offline_banner.dart';
@@ -28,6 +29,7 @@ class _FlowSportsAppState extends State<FlowSportsApp> with WidgetsBindingObserv
   final _seasonState = SeasonState();
   final _chatSettingsState = ChatSettingsState();
   final _announcementState = AnnouncementState();
+  final _enabledSportsState = EnabledSportsState();
   final _appUpdateState = AppUpdateState();
   final _firestoreService = FirestoreService();
   final _localIdentityService = LocalIdentityService();
@@ -89,6 +91,7 @@ class _FlowSportsAppState extends State<FlowSportsApp> with WidgetsBindingObserv
     _seasonState.dispose();
     _chatSettingsState.dispose();
     _announcementState.dispose();
+    _enabledSportsState.dispose();
     _appUpdateState.dispose();
     super.dispose();
   }
@@ -102,6 +105,7 @@ class _FlowSportsAppState extends State<FlowSportsApp> with WidgetsBindingObserv
         ChangeNotifierProvider.value(value: _seasonState),
         ChangeNotifierProvider.value(value: _chatSettingsState),
         ChangeNotifierProvider.value(value: _announcementState),
+        ChangeNotifierProvider.value(value: _enabledSportsState),
         ChangeNotifierProvider.value(value: _appUpdateState),
       ],
       child: MaterialApp.router(

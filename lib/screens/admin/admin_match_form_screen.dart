@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/constants.dart';
 import '../../core/design/app_spacing.dart';
 import '../../models/match.dart';
 import '../../models/team.dart';
@@ -11,10 +10,11 @@ import '../../services/firestore_service.dart';
 /// happens via "Generate Schedule". Useful for a one-off replay/tiebreaker
 /// match the admin needs to add by hand.
 class AdminMatchFormScreen extends StatefulWidget {
+  final String sport;
   final String category;
   final String season;
 
-  const AdminMatchFormScreen({super.key, required this.category, required this.season});
+  const AdminMatchFormScreen({super.key, required this.sport, required this.category, required this.season});
 
   @override
   State<AdminMatchFormScreen> createState() => _AdminMatchFormScreenState();
@@ -23,7 +23,7 @@ class AdminMatchFormScreen extends StatefulWidget {
 class _AdminMatchFormScreenState extends State<AdminMatchFormScreen> {
   final _firestoreService = FirestoreService();
   late final _teamsStream = _firestoreService.watchTeams(
-      sport: Sport.badminton, category: widget.category, season: widget.season);
+      sport: widget.sport, category: widget.category, season: widget.season);
   final _labelController = TextEditingController();
   Team? _teamA;
   Team? _teamB;
@@ -49,7 +49,7 @@ class _AdminMatchFormScreenState extends State<AdminMatchFormScreen> {
 
     try {
       final existing = await _firestoreService.fetchMatches(
-        sport: Sport.badminton,
+        sport: widget.sport,
         category: widget.category,
         season: widget.season,
         stage: 'league',
@@ -60,7 +60,7 @@ class _AdminMatchFormScreenState extends State<AdminMatchFormScreen> {
 
       await _firestoreService.addMatch(Match(
         id: '',
-        sport: Sport.badminton,
+        sport: widget.sport,
         category: widget.category,
         season: widget.season,
         stage: MatchStage.league,
@@ -70,7 +70,7 @@ class _AdminMatchFormScreenState extends State<AdminMatchFormScreen> {
         teamA: TeamRef(teamId: _teamA!.id, name: _teamA!.name),
         teamB: TeamRef(teamId: _teamB!.id, name: _teamB!.name),
         status: MatchStatus.upcoming,
-        notifyTopic: '${Sport.badminton}_${widget.category}',
+        notifyTopic: '${widget.sport}_${widget.category}',
       ));
 
       if (mounted) context.pop();
