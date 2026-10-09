@@ -3,6 +3,15 @@ import 'package:csv/csv.dart';
 import '../../models/match.dart';
 import '../constants.dart';
 
+/// A cell that starts with `=`, `+`, `-` or `@` is run as a formula by
+/// spreadsheet apps (CSV/formula injection), and team names and labels are
+/// typed by people — so such a cell gets a leading apostrophe, which
+/// spreadsheets show as plain text.
+String csvSafe(String value) {
+  if (value.isEmpty) return value;
+  return '=+-@'.contains(value[0]) ? "'$value" : value;
+}
+
 /// Builds one CSV covering every stage (league, knockout, tie-breaker) for a
 /// sport — "round 1, round 2, everything" in one downloadable file, sorted
 /// so a category's league matches come before its knockout matches.
@@ -36,20 +45,20 @@ String buildMatchesCsv(List<Match> matches) {
         categoryLabel(m.category),
         m.stage.name,
         m.matchCode,
-        m.label,
-        m.teamA.name ?? 'TBD',
-        m.teamB.name ?? 'TBD',
+        csvSafe(m.label),
+        csvSafe(m.teamA.name ?? 'TBD'),
+        csvSafe(m.teamB.name ?? 'TBD'),
         m.scoreA ?? '',
         m.scoreB ?? '',
         switch (m.result) {
-          MatchResult.teamA => m.teamA.name ?? 'Team A',
-          MatchResult.teamB => m.teamB.name ?? 'Team B',
+          MatchResult.teamA => csvSafe(m.teamA.name ?? 'Team A'),
+          MatchResult.teamB => csvSafe(m.teamB.name ?? 'Team B'),
           MatchResult.tie => 'Tie',
           null => '',
         },
         m.status.name,
-        m.venue ?? '',
-        m.court ?? '',
+        csvSafe(m.venue ?? ''),
+        csvSafe(m.court ?? ''),
       ],
   ];
 

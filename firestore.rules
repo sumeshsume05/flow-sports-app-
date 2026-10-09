@@ -13,8 +13,12 @@ service cloud.firestore {
 
     // Every count must stay a non-negative int — guards the viewer-writable
     // reaction-toggle path (react +1 / undo -1) below from ever going negative.
+    // The map may contain ONLY the known keys: any viewer can write here, and an
+    // extra key (or a non-integer value) would otherwise be stored and could
+    // break every screen that reads the match.
     function reactionCountsValid(counts) {
-      return (!('thumbsUp' in counts) || (counts.thumbsUp is int && counts.thumbsUp >= 0)) &&
+      return counts.keys().hasOnly(['thumbsUp', 'fire', 'wow']) &&
+        (!('thumbsUp' in counts) || (counts.thumbsUp is int && counts.thumbsUp >= 0)) &&
         (!('fire' in counts) || (counts.fire is int && counts.fire >= 0)) &&
         (!('wow' in counts) || (counts.wow is int && counts.wow >= 0));
     }
@@ -22,7 +26,8 @@ service cloud.firestore {
     // Same non-negative-int guard as reactionCountsValid, for the
     // viewer-writable prediction-cast/switch path below.
     function predictionCountsValid(counts) {
-      return (!('teamA' in counts) || (counts.teamA is int && counts.teamA >= 0)) &&
+      return counts.keys().hasOnly(['teamA', 'teamB']) &&
+        (!('teamA' in counts) || (counts.teamA is int && counts.teamA >= 0)) &&
         (!('teamB' in counts) || (counts.teamB is int && counts.teamB >= 0));
     }
 
@@ -70,7 +75,9 @@ service cloud.firestore {
 
       // Live-score +/- point log — append-only: a wrong tap is corrected by
       // a new entry (the admin's own - tap), never by editing or deleting a
-      // past one, so the log stays an honest record.
+      // past one, so the log stays an honest record. The one exception is
+      // clean-up after the match itself has been deleted (reset / delete
+      // match): then the orphaned entries can go.
       match /pointLog/{entryId} {
         allow read: if true;
         allow create: if isAdmin() &&
@@ -78,7 +85,9 @@ service cloud.firestore {
           request.resource.data.scoreA is int && request.resource.data.scoreA >= 0 &&
           request.resource.data.scoreB is int && request.resource.data.scoreB >= 0 &&
           request.resource.data.createdAt == request.time;
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if isAdmin() &&
+          !exists(/databases/$(database)/documents/matches/$(matchId));
       }
     }
 

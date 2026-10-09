@@ -57,12 +57,43 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
     _initialized = true;
   }
 
-  Future<void> _setStatus(MatchStatus status) async {
+  Future<void> _setStatus(MatchStatus status, Match match) async {
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
+      // Reopening a *completed knockout* match would leave later rounds
+      // standing on a result that no longer exists. If a later round has
+      // already been started, stop and say so; otherwise clear the slots this
+      // result had filled in the same batch.
+      if (match.stage == MatchStage.knockout &&
+          match.status == MatchStatus.completed &&
+          status != MatchStatus.completed) {
+        final knockout = await _firestoreService.fetchMatches(
+          sport: match.sport,
+          category: match.category,
+          season: match.season,
+          stage: 'knockout',
+        );
+        final dependents = dependentsOf(match.matchCode, knockout.where((m) => m.id != match.id).toList());
+        final started = dependents.where(isStarted).toList();
+        if (started.isNotEmpty) {
+          if (mounted) {
+            setState(() => _error =
+                "Can't reopen ${match.label}: ${started.map((m) => m.label).join(', ')} "
+                '${started.length == 1 ? 'has' : 'have'} already been started or played from its result. '
+                'Reset the later round first, then come back to this match.');
+          }
+          return;
+        }
+        await _firestoreService.resetKnockoutMatch(
+          match.id,
+          status,
+          unresolved: unresolveDependentSlots(match.matchCode, dependents),
+        );
+        return;
+      }
       await _firestoreService.setMatchStatus(widget.matchId, status);
     } on FirestoreWriteException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -240,6 +271,22 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
           completed: completed,
           otherKnockoutMatches: otherKnockout.where((m) => m.id != match.id).toList(),
         );
+
+        // Correcting a result so the *winner changes* would swap the teams of a
+        // later match that has already been started or played, leaving its
+        // result attached to the wrong teams and the podium wrong. Refuse, and
+        // say what to reset first. (Fixing only the score keeps the same teams,
+        // so it is never blocked.)
+        final stale = staleDependentUpdates(dependentUpdates, otherKnockout);
+        if (stale.isNotEmpty) {
+          if (mounted) {
+            setState(() => _error =
+                'This changes who advances, but ${stale.map((m) => m.label).join(', ')} '
+                '${stale.length == 1 ? 'has' : 'have'} already been started or played. Reset the later '
+                'round first (Reset to Upcoming), then correct this result.');
+          }
+          return;
+        }
       }
 
       await _firestoreService.saveResultAndResolveDependents(
@@ -301,14 +348,14 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
                     label: const Text('Start Match'),
                     onPressed: _saving || match.status == MatchStatus.live
                         ? null
-                        : () => _setStatus(MatchStatus.live),
+                        : () => _setStatus(MatchStatus.live, match),
                   ),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.restart_alt_rounded),
                     label: const Text('Reset to Upcoming'),
                     onPressed: _saving || match.status == MatchStatus.upcoming
                         ? null
-                        : () => _setStatus(MatchStatus.upcoming),
+                        : () => _setStatus(MatchStatus.upcoming, match),
                   ),
                 ],
               ),

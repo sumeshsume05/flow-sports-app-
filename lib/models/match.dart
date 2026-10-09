@@ -72,6 +72,15 @@ class MatchSource {
   Map<String, dynamic> toMap() => {'type': type, 'seed': seed, 'matchCode': matchCode};
 }
 
+/// Reads a viewer-writable counter map defensively: anyone can write to
+/// `reactionCounts` / `predictionCounts`, so a non-integer value must never be
+/// able to crash every screen that streams matches. Bad entries read as 0.
+/// Public so it can be tested.
+Map<String, int> parseCountMap(Object? raw) {
+  if (raw is! Map) return const {};
+  return {for (final e in raw.entries) '${e.key}': e.value is int ? e.value as int : 0};
+}
+
 class Match {
   final String id;
   final String sport;
@@ -196,14 +205,10 @@ class Match {
       court: data['court'] as String?,
       notes: data['notes'] as String?,
       notifyTopic: data['notifyTopic'] as String? ?? '',
-      reactionCounts: (data['reactionCounts'] as Map<String, dynamic>?)
-              ?.map((k, v) => MapEntry(k, v as int)) ??
-          const {},
+      reactionCounts: parseCountMap(data['reactionCounts']),
       lastCommentaryText: data['lastCommentaryText'] as String?,
       lastCommentaryAt: (data['lastCommentaryAt'] as Timestamp?)?.toDate(),
-      predictionCounts: (data['predictionCounts'] as Map<String, dynamic>?)
-              ?.map((k, v) => MapEntry(k, v as int)) ??
-          const {},
+      predictionCounts: parseCountMap(data['predictionCounts']),
       tiebreakerRound: data['tiebreakerRound'] as int?,
       rules: data['rules'] is Map
           ? CricketRules.fromMap(Map<String, dynamic>.from(data['rules'] as Map))
@@ -279,6 +284,12 @@ class Match {
         lineupB: lineupB,
         toss: toss,
       );
+
+  /// A match counts as played only when it is both marked completed *and*
+  /// carries a result. Standings, the podium and the bracket all use this, so
+  /// a match that was reset to upcoming/live can never keep counting from a
+  /// stale result.
+  bool get hasFinalResult => status == MatchStatus.completed && result != null;
 
   /// Computes the result from scores the moment they're saved, mirroring the
   /// source spreadsheet's Winner formula (tie modeled for fidelity even though

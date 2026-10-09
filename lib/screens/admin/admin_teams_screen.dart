@@ -112,7 +112,30 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
   /// all Generate Bracket currently supports (it feeds each section's top
   /// 2 into the existing 4-team knockout) — see CLAUDE.md's "Planned
   /// changes" for lifting that fixed shape.
+  /// A match remembers its league section, so moving a team between sections
+  /// after the schedule exists would leave its matches in the old section's
+  /// table (and the bracket would miss them). Block it with an explanation.
+  Future<bool> _sectionsLocked() async {
+    final league = await _firestoreService.fetchMatches(
+      sport: widget.sport,
+      category: widget.category,
+      season: widget.season,
+      stage: 'league',
+    );
+    if (league.isEmpty) return false;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 6),
+        content: Text('League matches already exist (${league.length}), so sections can\'t change — '
+            'each match belongs to a section. Delete the league matches in Admin > Matches first '
+            'if you really need to re-arrange.'),
+      ));
+    }
+    return true;
+  }
+
   Future<void> _autoArrangeDialog(List<Team> teams) async {
+    if (await _sectionsLocked()) return;
     const letters = ['A', 'B'];
     try {
       await Future.wait([
@@ -131,6 +154,8 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
   }
 
   Future<void> _pickSectionDialog(Team team) async {
+    if (await _sectionsLocked()) return;
+    if (!mounted) return;
     final section = await showDialog<String>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -162,11 +187,30 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
   }
 
   Future<void> _confirmDelete(Team team) async {
+    // A team that already has matches can't be deleted: its opponents' results
+    // against it would silently vanish from the standings, and its unplayed
+    // matches would be left pointing at a team that no longer exists.
+    final matchCount = await _firestoreService.countMatchesForTeam(team.id);
+    if (matchCount > 0) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text("Can't delete this team yet"),
+          content: Text('"${team.name}" is in $matchCount ${matchCount == 1 ? 'match' : 'matches'}. '
+              'Deleting the team would silently remove those results from the other teams\' '
+              'standings. Delete its matches first (Admin > Matches), then delete the team.'),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete team?'),
-        content: Text('Remove "${team.name}"? This does not delete any matches already created for them.'),
+        content: Text('Remove "${team.name}"? This cannot be undone.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           FilledButton(

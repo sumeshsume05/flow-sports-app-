@@ -79,9 +79,9 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
 
       setState(() => _message = 'Generated ${matches.length} league matches. Good luck out there!');
     } catch (e) {
-      setState(() => _message = '$e');
+      if (mounted) setState(() => _message = '$e');
     } finally {
-      setState(() => _generating = false);
+      if (mounted) setState(() => _generating = false);
     }
   }
 

@@ -291,18 +291,56 @@ class FirestoreService {
     }
   }
 
+  /// Deletes a match together with the sub-collections it owns. The match and
+  /// its commentary go in one batch; the append-only point log can only be
+  /// removed once the match no longer exists (the rule allows it exactly
+  /// then), so it is cleared second — and skipped, not fatal, if the rules
+  /// haven't been updated yet (those orphaned entries are never read again).
+  Future<void> _deleteMatchDocs(List<DocumentReference<Map<String, dynamic>>> matchRefs) async {
+    for (final ref in matchRefs) {
+      final commentary = await ref.collection(commentaryCollection).get();
+      final pointLog = await ref.collection(pointLogCollection).get();
+      final batch = _db.batch();
+      batch.delete(ref);
+      for (final d in commentary.docs) {
+        batch.delete(d.reference);
+      }
+      await batch.commit();
+      for (var i = 0; i < pointLog.docs.length; i += 400) {
+        final b = _db.batch();
+        for (final d in pointLog.docs.skip(i).take(400)) {
+          b.delete(d.reference);
+        }
+        try {
+          await b.commit();
+        } on FirebaseException catch (e) {
+          if (e.code != 'permission-denied') rethrow;
+          break;
+        }
+      }
+    }
+  }
+
   Future<void> deleteMatch(String matchId) async {
     try {
-      await _db.collection(matchesCollection).doc(matchId).delete();
+      await _deleteMatchDocs([_db.collection(matchesCollection).doc(matchId)]);
     } catch (e) {
       throw FirestoreWriteException('Could not delete match.', e);
     }
   }
 
+  /// How many matches (any stage, any status) involve [teamId] on either side.
+  Future<int> countMatchesForTeam(String teamId) async {
+    final matches = _db.collection(matchesCollection);
+    final a = await matches.where('teamA.teamId', isEqualTo: teamId).count().get();
+    final b = await matches.where('teamB.teamId', isEqualTo: teamId).count().get();
+    return (a.count ?? 0) + (b.count ?? 0);
+  }
+
   /// Deletes every match (all categories, all stages — league, knockout,
-  /// tie-breaker) for a sport within a season, in batches of 400 to stay
-  /// under Firestore's 500-op batch limit. Teams are left untouched, so
-  /// live-flow testing can repeat without re-entering rosters each time.
+  /// tie-breaker, friendly) for a sport within a season, with their
+  /// commentary and point logs. Teams are left untouched, so live-flow testing
+  /// can repeat without re-entering rosters each time.
   Future<void> resetSportMatches({required String sport, required String season}) async {
     try {
       final snap = await _db
@@ -310,15 +348,7 @@ class FirestoreService {
           .where('sport', isEqualTo: sport)
           .where('season', isEqualTo: season)
           .get();
-      final docs = snap.docs;
-      for (var i = 0; i < docs.length; i += 400) {
-        final chunk = docs.skip(i).take(400);
-        final batch = _db.batch();
-        for (final d in chunk) {
-          batch.delete(d.reference);
-        }
-        await batch.commit();
-      }
+      await _deleteMatchDocs([for (final d in snap.docs) d.reference]);
     } catch (e) {
       throw FirestoreWriteException('Could not reset matches.', e);
     }
@@ -387,11 +417,46 @@ class FirestoreService {
     }
   }
 
+  /// Moving a match away from `completed` also clears its `result`, so a match
+  /// that is reset to upcoming (or restarted live) stops counting in standings
+  /// and the podium. The scores themselves are kept — nothing entered is
+  /// thrown away; saving the result again re-completes it.
   Future<void> setMatchStatus(String matchId, MatchStatus status) async {
     try {
-      await _db.collection(matchesCollection).doc(matchId).update({'status': status.name});
+      await _db.collection(matchesCollection).doc(matchId).update({
+        'status': status.name,
+        if (status != MatchStatus.completed) 'result': null,
+      });
     } catch (e) {
       throw FirestoreWriteException('Could not update match status.', e);
+    }
+  }
+
+  /// Resets a completed knockout match and, in the same batch, sets the
+  /// downstream slots it had filled back to TBD, so nobody stays advanced on a
+  /// result that no longer exists. [unresolved] are the not-yet-started
+  /// dependents with those slots already cleared (see
+  /// `unresolveDependentSlots`).
+  Future<void> resetKnockoutMatch(
+    String matchId,
+    MatchStatus status, {
+    required List<Match> unresolved,
+  }) async {
+    try {
+      final batch = _db.batch();
+      batch.update(_db.collection(matchesCollection).doc(matchId), {
+        'status': status.name,
+        'result': null,
+      });
+      for (final m in unresolved) {
+        batch.update(_db.collection(matchesCollection).doc(m.id), {
+          'teamA': m.teamA.toMap(),
+          'teamB': m.teamB.toMap(),
+        });
+      }
+      await batch.commit();
+    } catch (e) {
+      throw FirestoreWriteException('Could not reset the match.', e);
     }
   }
 
