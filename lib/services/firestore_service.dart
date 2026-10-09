@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
+import '../core/utils/team_rename.dart';
 import '../models/chat_message.dart';
 import '../models/commentary_entry.dart';
 import '../models/match.dart';
@@ -120,9 +121,31 @@ class FirestoreService {
     }
   }
 
+  /// Renames a team *and* every match that already references it. Match docs
+  /// carry a denormalized copy of each team's name (`teamA`/`teamB`), so
+  /// updating only `teams/{id}` would leave already-generated matches
+  /// showing the old name. Written in chunked batches (400 ops) to stay
+  /// under Firestore's 500-op limit; see [matchesNeedingNameUpdate].
   Future<void> updateTeam(String teamId, {required String name}) async {
     try {
-      await _db.collection(teamsCollection).doc(teamId).update({'name': name});
+      final matchesRef = _db.collection(matchesCollection);
+      final asA = await matchesRef.where('teamA.teamId', isEqualTo: teamId).get();
+      final asB = await matchesRef.where('teamB.teamId', isEqualTo: teamId).get();
+      final matches = [...asA.docs, ...asB.docs].map(Match.fromFirestore).toList();
+      final updates = matchesNeedingNameUpdate(matches, teamId: teamId, newName: name);
+
+      // The team doc itself goes in the first chunk.
+      final ops = <void Function(WriteBatch)>[
+        (b) => b.update(_db.collection(teamsCollection).doc(teamId), {'name': name}),
+        for (final u in updates) (b) => b.update(matchesRef.doc(u.matchId), u.fields),
+      ];
+      for (var i = 0; i < ops.length; i += 400) {
+        final batch = _db.batch();
+        for (final op in ops.skip(i).take(400)) {
+          op(batch);
+        }
+        await batch.commit();
+      }
     } catch (e) {
       throw FirestoreWriteException('Could not update team.', e);
     }

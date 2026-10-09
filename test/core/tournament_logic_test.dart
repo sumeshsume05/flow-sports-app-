@@ -6,6 +6,7 @@ import 'package:flow_sports_app/core/utils/match_grouping.dart';
 import 'package:flow_sports_app/core/utils/podium_resolver.dart';
 import 'package:flow_sports_app/core/utils/round_robin.dart';
 import 'package:flow_sports_app/core/utils/standings_calculator.dart';
+import 'package:flow_sports_app/core/utils/team_rename.dart';
 import 'package:flow_sports_app/models/match.dart';
 import 'package:flow_sports_app/models/standing_row.dart';
 import 'package:flow_sports_app/models/team.dart';
@@ -1327,6 +1328,78 @@ void main() {
       expect(lines.first, contains('Team A'));
       expect(lines.first, contains('Winner'));
       expect(lines[1], contains('Team A')); // winner column names Team A
+    });
+  });
+
+  group('matchesNeedingNameUpdate', () {
+    Match m(String id, TeamRef a, TeamRef b,
+            {MatchStage stage = MatchStage.league, String label = 'Match'}) =>
+        Match(
+          id: id,
+          sport: 'badminton',
+          category: 'boys',
+          season: '2026',
+          stage: stage,
+          matchNumber: 1,
+          label: label,
+          matchCode: id,
+          teamA: a,
+          teamB: b,
+          notifyTopic: 'badminton_boys',
+        );
+
+    test('renames teamA and teamB sides via dotted paths, leaves other matches alone', () {
+      final updates = matchesNeedingNameUpdate(
+        [
+          m('m1', const TeamRef(teamId: 't1', name: 'Old'), const TeamRef(teamId: 't2', name: 'X')),
+          m('m2', const TeamRef(teamId: 't3', name: 'Y'), const TeamRef(teamId: 't1', name: 'Old')),
+          m('m3', const TeamRef(teamId: 't3', name: 'Y'), const TeamRef(teamId: 't2', name: 'X')),
+        ],
+        teamId: 't1',
+        newName: 'New',
+      );
+      expect(updates.length, 2);
+      expect(updates.firstWhere((u) => u.matchId == 'm1').fields, {'teamA.name': 'New'});
+      expect(updates.firstWhere((u) => u.matchId == 'm2').fields, {'teamB.name': 'New'});
+    });
+
+    test('no-op rename and duplicate matches produce no extra writes', () {
+      final match = m('m1', const TeamRef(teamId: 't1', name: 'Same'), const TeamRef(teamId: 't2', name: 'X'));
+      expect(matchesNeedingNameUpdate([match], teamId: 't1', newName: 'Same'), isEmpty);
+      // Same match returned by both the teamA and teamB queries.
+      final dup = m('m1', const TeamRef(teamId: 't1', name: 'Old'), const TeamRef(teamId: 't2', name: 'X'));
+      expect(matchesNeedingNameUpdate([dup, dup], teamId: 't1', newName: 'New').length, 1);
+    });
+
+    test('tie-breaker label tail is rebuilt by team id, not by text search', () {
+      // "A" is a substring of "AB" — a text replace of "A" would corrupt "AB".
+      final tb = m(
+        'tb1',
+        const TeamRef(teamId: 't1', name: 'A'),
+        const TeamRef(teamId: 't2', name: 'AB'),
+        stage: MatchStage.tiebreaker,
+        label: 'Tie-Breaker: A vs AB',
+      );
+      final updates = matchesNeedingNameUpdate([tb], teamId: 't1', newName: 'Zed');
+      expect(updates.single.fields, {'teamA.name': 'Zed', 'label': 'Tie-Breaker: Zed vs AB'});
+    });
+
+    test('sectioned tie-breaker label keeps its prefix', () {
+      final tb = m(
+        'tb1',
+        const TeamRef(teamId: 't1', name: 'P'),
+        const TeamRef(teamId: 't2', name: 'Q'),
+        stage: MatchStage.tiebreaker,
+        label: 'Section A — Tie-Breaker (Round 2): P vs Q',
+      );
+      final updates = matchesNeedingNameUpdate([tb], teamId: 't2', newName: 'R');
+      expect(updates.single.fields['label'], 'Section A — Tie-Breaker (Round 2): P vs R');
+    });
+
+    test('knockout match with a resolved team is renamed too', () {
+      final ko = m('ko', const TeamRef(teamId: 't1', name: 'Old'), TeamRef.tbd, stage: MatchStage.knockout);
+      final updates = matchesNeedingNameUpdate([ko], teamId: 't1', newName: 'New');
+      expect(updates.single.fields, {'teamA.name': 'New'});
     });
   });
 }
