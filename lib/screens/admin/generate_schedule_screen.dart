@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/constants.dart';
+import '../../core/cricket/cricket_rules.dart';
+import '../../core/cricket/rules_summary.dart';
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
@@ -125,6 +128,42 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
                     'league matches — everyone plays everyone once, round-robin style.',
                     style: textTheme.bodySmall,
                   ),
+                if (widget.sport == Sport.cricket) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  StreamBuilder<CricketRules>(
+                    stream: _firestoreService.watchCricketRules(),
+                    builder: (context, rulesSnap) => Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(AppSpacing.sm),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(AppRadius.sm),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Rules matches will use', style: textTheme.labelLarge),
+                          const SizedBox(height: 2),
+                          Text(
+                            rulesSnap.hasData ? rulesSummary(rulesSnap.data!) : 'Loading…',
+                            style: textTheme.bodySmall,
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: () => context.push('/admin/cricket/rules'),
+                              child: const Text('Change default rules'),
+                            ),
+                          ),
+                          Text(
+                            'Each match takes its own copy when you set it up, and you can still adjust that one match.',
+                            style: textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.lg),
                 FilledButton.icon(
                   icon: const Icon(Icons.auto_awesome),

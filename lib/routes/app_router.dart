@@ -2,12 +2,16 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
+import '../core/constants.dart';
+import '../screens/admin/admin_cricket_match_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/admin/admin_match_edit_screen.dart';
 import '../screens/admin/admin_match_form_screen.dart';
 import '../screens/admin/admin_match_list_screen.dart';
+import '../screens/admin/admin_players_screen.dart';
 import '../screens/admin/admin_seasons_screen.dart';
 import '../screens/admin/admin_teams_screen.dart';
+import '../screens/admin/cricket_rules_screen.dart';
 import '../screens/admin/generate_bracket_screen.dart';
 import '../screens/admin/generate_schedule_screen.dart';
 import '../screens/admin/login_screen.dart';
@@ -114,6 +118,11 @@ GoRouter buildRouter(AuthState authState) {
       GoRoute(path: '/admin/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/admin', builder: (context, state) => const AdminDashboardScreen()),
       GoRoute(path: '/admin/seasons', builder: (context, state) => const AdminSeasonsScreen()),
+      GoRoute(path: '/admin/cricket/rules', builder: (context, state) => const CricketRulesScreen()),
+      GoRoute(
+        path: '/admin/teams/:id/players',
+        builder: (context, state) => AdminPlayersScreen(teamId: state.pathParameters['id']!),
+      ),
       GoRoute(
         path: '/admin/teams',
         builder: (context, state) => AdminTeamsScreen(
@@ -140,7 +149,11 @@ GoRouter buildRouter(AuthState authState) {
       ),
       GoRoute(
         path: '/admin/matches/:id/edit',
-        builder: (context, state) => AdminMatchEditScreen(matchId: state.pathParameters['id']!),
+        // Cricket matches have their own admin page; every other sport uses
+        // the original score-entry screen. The list passes `sport` along.
+        builder: (context, state) => sport(state) == Sport.cricket
+            ? AdminCricketMatchScreen(matchId: state.pathParameters['id']!)
+            : AdminMatchEditScreen(matchId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/admin/schedule/generate',

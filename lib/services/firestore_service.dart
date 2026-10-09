@@ -1,10 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
+import '../core/cricket/cricket_rules.dart';
+import '../core/cricket/cricket_toss.dart';
 import '../core/utils/team_rename.dart';
 import '../models/chat_message.dart';
 import '../models/commentary_entry.dart';
 import '../models/match.dart';
+import '../models/player.dart';
 import '../models/point_log_entry.dart';
 import '../models/season.dart';
 import '../models/team.dart';
@@ -111,6 +114,79 @@ class FirestoreService {
     }
     final snap = await query.get();
     return snap.docs.map(Match.fromFirestore).toList();
+  }
+
+  Stream<Team?> watchTeam(String teamId) {
+    return _db
+        .collection(teamsCollection)
+        .doc(teamId)
+        .snapshots()
+        .map((doc) => doc.exists ? Team.fromFirestore(doc) : null);
+  }
+
+  /// Replaces a team's whole roster. Players are only ever added, renamed or
+  /// deactivated (never removed), so ids that appear in lineups and ball
+  /// events stay resolvable.
+  Future<void> updateTeamPlayers(String teamId, List<Player> players) async {
+    try {
+      await _db
+          .collection(teamsCollection)
+          .doc(teamId)
+          .update({'players': players.map((p) => p.toMap()).toList()});
+    } catch (e) {
+      throw FirestoreWriteException('Could not save players.', e);
+    }
+  }
+
+  /// Which sports viewers see on Home: `config/enabledSports` = `{sport: bool}`.
+  Future<void> setSportEnabled(String sport, bool enabled) async {
+    try {
+      await _db
+          .collection(configCollection)
+          .doc('enabledSports')
+          .set({sport: enabled}, SetOptions(merge: true));
+    } catch (e) {
+      throw FirestoreWriteException('Could not update visible sports.', e);
+    }
+  }
+
+  /// Tournament-wide default cricket rules (`config/cricketRules`). Falls
+  /// back to the tape-ball preset until an admin saves one.
+  Stream<CricketRules> watchCricketRules() {
+    return _db
+        .collection(configCollection)
+        .doc('cricketRules')
+        .snapshots()
+        .map((doc) => CricketRules.fromMap(doc.data()));
+  }
+
+  Future<void> saveCricketRules(CricketRules rules) async {
+    try {
+      await _db.collection(configCollection).doc('cricketRules').set(rules.toMap());
+    } catch (e) {
+      throw FirestoreWriteException('Could not save cricket rules.', e);
+    }
+  }
+
+  /// Saves a cricket match's own rules snapshot, the two playing squads (as
+  /// player ids) and the toss in one write.
+  Future<void> saveCricketSetup(
+    String matchId, {
+    required CricketRules rules,
+    required List<String> lineupA,
+    required List<String> lineupB,
+    required CricketToss? toss,
+  }) async {
+    try {
+      await _db.collection(matchesCollection).doc(matchId).update({
+        'rules': rules.toMap(),
+        'lineupA': lineupA,
+        'lineupB': lineupB,
+        'toss': toss?.toMap(),
+      });
+    } catch (e) {
+      throw FirestoreWriteException('Could not save match setup.', e);
+    }
   }
 
   Future<void> addTeam(Team team) async {

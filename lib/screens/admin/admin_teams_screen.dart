@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/constants.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../models/team.dart';
@@ -35,7 +37,8 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
         title: const Text('Add Team'),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: 'e.g. Firstname & Firstname'),
+          decoration: InputDecoration(
+              hintText: widget.sport == Sport.cricket ? 'e.g. FLOW Strikers' : 'e.g. Firstname & Firstname'),
           autofocus: true,
         ),
         actions: [
@@ -87,6 +90,17 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
     } catch (e) {
       _showWriteError(e);
     }
+  }
+
+  /// Badminton shows only the seed; cricket also shows how many players the
+  /// team has so a missing roster is obvious before match day.
+  Widget? _subtitleFor(Team team) {
+    final parts = <String>[
+      if (team.seed != null) 'Seed ${team.seed}',
+      if (widget.sport == Sport.cricket)
+        team.activePlayers.isEmpty ? 'No players yet' : '${team.activePlayers.length} players',
+    ];
+    return parts.isEmpty ? null : Text(parts.join(' · '));
   }
 
   static const _sectionOptions = ['None', 'A', 'B'];
@@ -224,11 +238,22 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
                       tooltip: 'Set league section',
                     ),
                     title: Text(team.name),
-                    subtitle: team.seed != null ? Text('Seed ${team.seed}') : null,
+                    subtitle: _subtitleFor(team),
                     onTap: () => _editTeamDialog(team),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _confirmDelete(team),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.sport == Sport.cricket)
+                          IconButton(
+                            icon: const Icon(Icons.groups_outlined),
+                            tooltip: 'Players',
+                            onPressed: () => context.push('/admin/teams/${team.id}/players'),
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _confirmDelete(team),
+                        ),
+                      ],
                     ),
                   ),
                 ),

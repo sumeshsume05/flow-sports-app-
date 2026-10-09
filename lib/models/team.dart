@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'player.dart';
+
 class Team {
   final String id;
   final String sport;
@@ -15,6 +17,10 @@ class Team {
   /// section assigned. See round_robin.generateSectionedLeagueMatches.
   final String? section;
 
+  /// Cricket only: the team's roster, in the order the admin arranged it.
+  /// Empty for sports whose team is just a name (badminton pairs).
+  final List<Player> players;
+
   Team({
     required this.id,
     required this.sport,
@@ -23,6 +29,7 @@ class Team {
     required this.season,
     this.seed,
     this.section,
+    this.players = const [],
   });
 
   factory Team.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -35,6 +42,10 @@ class Team {
       season: data['season'] as String? ?? '',
       seed: data['seed'] as int?,
       section: data['section'] as String?,
+      players: [
+        for (final p in (data['players'] as List?) ?? const [])
+          Player.fromMap(Map<String, dynamic>.from(p as Map)),
+      ],
     );
   }
 
@@ -45,9 +56,13 @@ class Team {
         'season': season,
         'seed': seed,
         'section': section,
+        if (players.isNotEmpty) 'players': players.map((p) => p.toMap()).toList(),
       };
 
-  Team copyWith({int? seed, String? section}) => Team(
+  /// Players eligible to be picked for a match.
+  List<Player> get activePlayers => players.where((p) => p.active).toList();
+
+  Team copyWith({int? seed, String? section, List<Player>? players}) => Team(
         id: id,
         sport: sport,
         category: category,
@@ -55,6 +70,7 @@ class Team {
         season: season,
         seed: seed ?? this.seed,
         section: section ?? this.section,
+        players: players ?? this.players,
       );
 
   // Value equality by id — Firestore snapshots rebuild fresh Team instances

@@ -5,7 +5,8 @@
 /// over `.all` instead of hand-writing one block per sport/category.
 class Sport {
   static const badminton = 'badminton';
-  static const all = [badminton];
+  static const cricket = 'cricket';
+  static const all = [badminton, cricket];
 }
 
 class Category {

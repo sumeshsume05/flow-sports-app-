@@ -17,6 +17,7 @@ import '../../services/firestore_service.dart';
 import '../../state/announcement_state.dart';
 import '../../state/auth_state.dart';
 import '../../state/chat_settings_state.dart';
+import '../../state/enabled_sports_state.dart';
 import '../../state/season_state.dart';
 import '../../models/team.dart';
 
@@ -221,6 +222,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  Future<void> _setSportEnabled(String sport, bool enabled) async {
+    try {
+      await _firestoreService.setSportEnabled(sport, enabled);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -294,6 +303,44 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                     onChanged: _setChatEnabled,
                   ),
                 ),
+                const SizedBox(height: AppSpacing.sm),
+                Builder(builder: (context) {
+                  final enabledSports = context.watch<EnabledSportsState>();
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                                AppSpacing.md, AppSpacing.sm, AppSpacing.md, 0),
+                            child: Text('Sports shown to viewers', style: textTheme.titleMedium),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                                AppSpacing.md, 2, AppSpacing.md, AppSpacing.xs),
+                            child: Text(
+                              'Switch a sport off to keep it hidden while you set it up — you still '
+                              'see it here and in "View live app".',
+                              style: textTheme.bodySmall,
+                            ),
+                          ),
+                          for (final sport in Sport.all)
+                            SwitchListTile(
+                              secondary: Icon(sportConfig(sport).icon),
+                              title: Text(sportConfig(sport).label),
+                              subtitle: Text(enabledSports.isEnabled(sport)
+                                  ? 'Visible to viewers'
+                                  : 'Hidden from viewers'),
+                              value: enabledSports.isEnabled(sport),
+                              onChanged: (on) => _setSportEnabled(sport, on),
+                            ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
                 const SizedBox(height: AppSpacing.sm),
                 Builder(builder: (context) {
                   final announcement = context.watch<AnnouncementState>().text;
@@ -378,6 +425,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                         label: Text(_busySport == sport ? 'Preparing…' : 'Download CSV'),
                         onPressed: _busySport == sport ? null : () => _downloadCsv(sport, season),
                       ),
+                      if (sport == Sport.cricket)
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.rule),
+                          label: const Text('Cricket rules'),
+                          onPressed: () => context.push('/admin/cricket/rules'),
+                        ),
                     ],
                   ),
                   const SizedBox(height: AppSpacing.md),
