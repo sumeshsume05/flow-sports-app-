@@ -83,7 +83,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
     final kof1 = _byCode('KOF1');
     final kof2 = _byCode('KOF2');
     if (kof1 == null || kof2 == null || _byCode('KOF3') != null) return false;
-    bool decided(Match m) => m.result != null && m.result != MatchResult.tie;
+    bool decided(Match m) => m.hasFinalResult && m.result != MatchResult.tie;
     if (!decided(kof1) || !decided(kof2)) return false;
     final aWins = [kof1, kof2].where((m) => m.result == MatchResult.teamA).length;
     final bWins = [kof1, kof2].where((m) => m.result == MatchResult.teamB).length;

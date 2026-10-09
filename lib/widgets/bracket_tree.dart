@@ -35,8 +35,8 @@ class BracketTree extends StatelessWidget {
   Widget _finalSlot(BuildContext context, {Match? koF1, Match? koF2, Match? koF3, String? subtitle}) {
     if (koF1 == null) return const SizedBox.shrink();
     final games = [koF1, koF2!, ?koF3];
-    final aWins = games.where((m) => m.result == MatchResult.teamA).length;
-    final bWins = games.where((m) => m.result == MatchResult.teamB).length;
+    final aWins = games.where((m) => m.hasFinalResult && m.result == MatchResult.teamA).length;
+    final bWins = games.where((m) => m.hasFinalResult && m.result == MatchResult.teamB).length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

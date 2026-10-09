@@ -22,7 +22,7 @@ List<StandingRow> computeStandings({
   final rows = {for (final t in teams) t.id: StandingRow(teamId: t.id, teamName: t.name)};
 
   for (final m in leagueMatches) {
-    if (m.result == null) continue; // not yet played
+    if (!m.hasFinalResult) continue; // not yet played (or reset after being played)
     final aId = m.teamA.teamId;
     final bId = m.teamB.teamId;
     if (aId == null || bId == null) continue;
@@ -161,7 +161,7 @@ List<StandingRow> resolveTiebreakerOrder({
   };
 
   for (final m in tiebreakerMatches) {
-    if (m.result == null) continue;
+    if (!m.hasFinalResult) continue;
     final aId = m.teamA.teamId;
     final bId = m.teamB.teamId;
     if (aId == null || bId == null) continue;

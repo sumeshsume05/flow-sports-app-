@@ -48,7 +48,7 @@ Podium? computePodium(List<Match> knockoutMatches) {
   final ko3 = byCode('KO3');
   final ko2 = byCode('KO2');
   final ko1 = byCode('KO1');
-  bool decided(Match? m) => m != null && m.result != null && m.result != MatchResult.tie;
+  bool decided(Match? m) => m != null && m.hasFinalResult && m.result != MatchResult.tie;
 
   TeamRef winnerOf(Match m) => m.result == MatchResult.teamA ? m.teamA : m.teamB;
   TeamRef loserOf(Match m) => m.result == MatchResult.teamA ? m.teamB : m.teamA;

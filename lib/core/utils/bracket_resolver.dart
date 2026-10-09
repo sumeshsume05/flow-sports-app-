@@ -366,3 +366,66 @@ List<Match> resolveDependentSlots({
   }
   return updated;
 }
+
+
+// ---- keeping the bracket consistent when a result is corrected -----------
+
+/// Knockout matches whose team slot is fed by [code]'s winner or loser.
+List<Match> dependentsOf(String code, List<Match> others) => [
+      for (final m in others)
+        if (m.teamASource?.matchCode == code || m.teamBSource?.matchCode == code) m,
+    ];
+
+/// A dependent that has been played or started must not have its teams
+/// silently swapped underneath its result.
+bool isStarted(Match m) => m.result != null || m.status != MatchStatus.upcoming;
+
+/// Of the updates [resolveDependentSlots] produced for a corrected result,
+/// those that would change which teams play in a match that has *already
+/// been started or played* — saving would leave that match's result
+/// attached to the wrong teams, and the podium wrong. Re-saving the same
+/// winner (a score correction) changes no team, so it is never reported.
+List<Match> staleDependentUpdates(List<Match> updates, List<Match> current) {
+  final byId = {for (final m in current) m.id: m};
+  return [
+    for (final u in updates)
+      if (byId[u.id] case final old?
+          when isStarted(old) &&
+              (old.teamA.teamId != u.teamA.teamId || old.teamB.teamId != u.teamB.teamId))
+        old,
+  ];
+}
+
+/// Resets the slots fed by [code] back to TBD — used when a completed
+/// knockout match is reset, so nobody stays advanced on a result that no
+/// longer exists. Only dependents that haven't started should be passed.
+List<Match> unresolveDependentSlots(String code, List<Match> dependents) {
+  return [
+    for (final m in dependents)
+      Match(
+        id: m.id,
+        sport: m.sport,
+        category: m.category,
+        season: m.season,
+        stage: m.stage,
+        matchNumber: m.matchNumber,
+        label: m.label,
+        matchCode: m.matchCode,
+        section: m.section,
+        teamA: m.teamASource?.matchCode == code ? TeamRef.tbd : m.teamA,
+        teamB: m.teamBSource?.matchCode == code ? TeamRef.tbd : m.teamB,
+        teamASource: m.teamASource,
+        teamBSource: m.teamBSource,
+        scoreA: m.scoreA,
+        scoreB: m.scoreB,
+        result: m.result,
+        status: m.status,
+        scheduledAt: m.scheduledAt,
+        venue: m.venue,
+        court: m.court,
+        notes: m.notes,
+        notifyTopic: m.notifyTopic,
+        tiebreakerRound: m.tiebreakerRound,
+      ),
+  ];
+}
