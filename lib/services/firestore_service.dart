@@ -5,6 +5,7 @@ import '../core/cricket/cricket_rules.dart';
 import '../core/cricket/cricket_toss.dart';
 import '../core/cricket/match_rules_stamp.dart';
 import '../core/cricket/tournament_plan.dart';
+import '../core/utils/bracket_resolver.dart';
 import '../core/utils/team_rename.dart';
 import '../models/chat_message.dart';
 import '../models/commentary_entry.dart';
@@ -405,14 +406,19 @@ class FirestoreService {
   }
 
   /// Saves a result (scores computed to a MatchResult, status -> completed) and
-  /// applies any dependent knockout-slot resolutions in one atomic batch write,
-  /// so two admins editing at once can't leave the bracket half-updated.
-  Future<void> saveResultAndResolveDependents({
+  /// fills the later knockout slots it decides, in one atomic batch.
+  ///
+  /// Each [SlotWrite] sets ONE team slot of a later match (dotted fields such
+  /// as `teamA.teamId`), never the whole match. Rewriting both slots from a
+  /// snapshot read earlier let two admins who save close together erase each
+  /// other's slot (the second write put the other slot's old "TBD" back);
+  /// single-slot writes are disjoint, so both saves survive in either order.
+  Future<void> saveResultAndResolveSlots({
     required String matchId,
     required int scoreA,
     required int scoreB,
     required MatchResult result,
-    required List<Match> dependentUpdates,
+    required List<SlotWrite> slotWrites,
   }) async {
     try {
       final batch = _db.batch();
@@ -422,11 +428,8 @@ class FirestoreService {
         'result': result.name,
         'status': MatchStatus.completed.name,
       });
-      for (final m in dependentUpdates) {
-        batch.update(_db.collection(matchesCollection).doc(m.id), {
-          'teamA': m.teamA.toMap(),
-          'teamB': m.teamB.toMap(),
-        });
+      for (final e in slotWriteFields(slotWrites).entries) {
+        batch.update(_db.collection(matchesCollection).doc(e.key), e.value);
       }
       await batch.commit();
     } catch (e) {
@@ -484,13 +487,13 @@ class FirestoreService {
 
   /// Resets a completed knockout match and, in the same batch, sets the
   /// downstream slots it had filled back to TBD, so nobody stays advanced on a
-  /// result that no longer exists. [unresolved] are the not-yet-started
-  /// dependents with those slots already cleared (see
-  /// `unresolveDependentSlots`).
+  /// result that no longer exists. [clears] are slot-level writes that put
+  /// exactly those slots back to TBD (see `unresolveSlotWrites`) — nothing
+  /// else on the later matches is touched.
   Future<void> resetKnockoutMatch(
     String matchId,
     MatchStatus status, {
-    required List<Match> unresolved,
+    required List<SlotWrite> clears,
   }) async {
     try {
       final batch = _db.batch();
@@ -498,11 +501,8 @@ class FirestoreService {
         'status': status.name,
         'result': null,
       });
-      for (final m in unresolved) {
-        batch.update(_db.collection(matchesCollection).doc(m.id), {
-          'teamA': m.teamA.toMap(),
-          'teamB': m.teamB.toMap(),
-        });
+      for (final e in slotWriteFields(clears).entries) {
+        batch.update(_db.collection(matchesCollection).doc(e.key), e.value);
       }
       await batch.commit();
     } catch (e) {

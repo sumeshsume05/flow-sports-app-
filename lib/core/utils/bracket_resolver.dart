@@ -429,3 +429,88 @@ List<Match> unresolveDependentSlots(String code, List<Match> dependents) {
       ),
   ];
 }
+
+
+// ---- slot-level writes (safe when two admins save at the same time) ----------
+
+/// One team slot of one later match to set — `teamA` or `teamB` only. Writing
+/// the whole match (both slots) from a snapshot read earlier lets two admins
+/// who save close together erase each other's work (the second write re-sends
+/// the other slot's old "TBD"); a single-slot write can't touch anything else.
+class SlotWrite {
+  final String matchId;
+
+  /// 'teamA' or 'teamB'.
+  final String slot;
+  final TeamRef team;
+
+  const SlotWrite(this.matchId, this.slot, this.team);
+
+  @override
+  bool operator ==(Object other) =>
+      other is SlotWrite &&
+      other.matchId == matchId &&
+      other.slot == slot &&
+      other.team.teamId == team.teamId &&
+      other.team.name == team.name;
+
+  @override
+  int get hashCode => Object.hash(matchId, slot, team.teamId, team.name);
+
+  @override
+  String toString() => 'SlotWrite($matchId.$slot -> ${team.name ?? 'TBD'})';
+}
+
+/// The slot writes a just-completed knockout match causes: its winner or
+/// loser goes into every later slot that names it as a source — and nothing
+/// else. Same rules (and the same tie guard) as [resolveDependentSlots].
+List<SlotWrite> dependentSlotWrites({
+  required Match completed,
+  required List<Match> otherKnockoutMatches,
+}) {
+  if (completed.result == null) return const [];
+  if (completed.result == MatchResult.tie) {
+    throw StateError(
+        'A knockout match cannot resolve dependent slots on a tied result (${completed.matchCode}).');
+  }
+  final winner = completed.result == MatchResult.teamA ? completed.teamA : completed.teamB;
+  final loser = completed.result == MatchResult.teamA ? completed.teamB : completed.teamA;
+
+  TeamRef? pick(MatchSource? source) {
+    if (source == null || source.matchCode != completed.matchCode) return null;
+    return switch (source.type) {
+      'winner' => winner,
+      'loser' => loser,
+      _ => null,
+    };
+  }
+
+  return [
+    for (final m in otherKnockoutMatches) ...[
+      if (pick(m.teamASource) case final t?) SlotWrite(m.id, 'teamA', t),
+      if (pick(m.teamBSource) case final t?) SlotWrite(m.id, 'teamB', t),
+    ],
+  ];
+}
+
+/// Sets back to TBD exactly the slots fed by [code] — for when a completed
+/// knockout match is reopened. Only pass dependents that haven't started.
+List<SlotWrite> unresolveSlotWrites(String code, List<Match> dependents) => [
+      for (final m in dependents) ...[
+        if (m.teamASource?.matchCode == code) SlotWrite(m.id, 'teamA', TeamRef.tbd),
+        if (m.teamBSource?.matchCode == code) SlotWrite(m.id, 'teamB', TeamRef.tbd),
+      ],
+    ];
+
+/// Groups slot writes into one Firestore field map per match, using dotted
+/// paths so that only `teamA.teamId` / `teamA.name` (etc.) are set — never the
+/// whole match and never the other slot.
+Map<String, Map<String, dynamic>> slotWriteFields(List<SlotWrite> writes) {
+  final out = <String, Map<String, dynamic>>{};
+  for (final w in writes) {
+    final fields = out.putIfAbsent(w.matchId, () => <String, dynamic>{});
+    fields['${w.slot}.teamId'] = w.team.teamId;
+    fields['${w.slot}.name'] = w.team.name;
+  }
+  return out;
+}

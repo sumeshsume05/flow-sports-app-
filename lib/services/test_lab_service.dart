@@ -198,12 +198,12 @@ class TestLabService {
         status: MatchStatus.completed,
         notifyTopic: next.notifyTopic,
       );
-      await _firestoreService.saveResultAndResolveDependents(
+      await _firestoreService.saveResultAndResolveSlots(
         matchId: next.id,
         scoreA: s.a,
         scoreB: s.b,
         result: result,
-        dependentUpdates: resolveDependentSlots(
+        slotWrites: dependentSlotWrites(
           completed: completed,
           otherKnockoutMatches: all.where((m) => m.id != next.id).toList(),
         ),

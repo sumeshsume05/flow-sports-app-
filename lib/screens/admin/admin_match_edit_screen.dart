@@ -90,7 +90,7 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
         await _firestoreService.resetKnockoutMatch(
           match.id,
           status,
-          unresolved: unresolveDependentSlots(match.matchCode, dependents),
+          clears: unresolveSlotWrites(match.matchCode, dependents),
         );
         return;
       }
@@ -242,7 +242,7 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
     try {
       final result = Match.computeResult(scoreA, scoreB)!;
 
-      var dependentUpdates = <Match>[];
+      var slotWrites = <SlotWrite>[];
       if (match.stage == MatchStage.knockout) {
         final otherKnockout = await _firestoreService.fetchMatches(
           sport: match.sport,
@@ -267,10 +267,9 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
           status: MatchStatus.completed,
           notifyTopic: match.notifyTopic,
         );
-        dependentUpdates = resolveDependentSlots(
-          completed: completed,
-          otherKnockoutMatches: otherKnockout.where((m) => m.id != match.id).toList(),
-        );
+        final others = otherKnockout.where((m) => m.id != match.id).toList();
+        final dependentUpdates = resolveDependentSlots(completed: completed, otherKnockoutMatches: others);
+        slotWrites = dependentSlotWrites(completed: completed, otherKnockoutMatches: others);
 
         // Correcting a result so the *winner changes* would swap the teams of a
         // later match that has already been started or played, leaving its
@@ -289,12 +288,12 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
         }
       }
 
-      await _firestoreService.saveResultAndResolveDependents(
+      await _firestoreService.saveResultAndResolveSlots(
         matchId: match.id,
         scoreA: scoreA,
         scoreB: scoreB,
         result: result,
-        dependentUpdates: dependentUpdates,
+        slotWrites: slotWrites,
       );
     } on FirestoreWriteException catch (e) {
       // Scores are deliberately left in the fields — nothing typed courtside

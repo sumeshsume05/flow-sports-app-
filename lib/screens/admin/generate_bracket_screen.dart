@@ -27,12 +27,21 @@ class _SectionPanel {
   List<StandingRow> candidates;
   final TieChainResult? chain;
 
+  /// How many of this panel's league matches have a final result.
+  final LeagueProgress progress;
+
+  /// Runs of dead-level teams inside the qualifying places whose order decides
+  /// who plays whom — the admin must confirm their order before generating.
+  final List<List<StandingRow>> seedTies;
+
   _SectionPanel({
     required this.label,
     required this.section,
     required this.qualifyCount,
     required this.candidates,
     required this.chain,
+    required this.progress,
+    required this.seedTies,
   });
 }
 
@@ -105,20 +114,31 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
 
     TieChainResult? chain;
     var candidates = rawCandidates;
+    var clusterStart = 0;
     if (cluster != null) {
-      chain = resolveTieChain(originalCluster: cluster, allTiebreakerMatches: tiebreakerMatches);
+      clusterStart = rawCandidates.indexWhere((r) => r.teamId == cluster.first.teamId);
+      // The cut-off lets the chain stop as soon as a still-level group can no
+      // longer change who qualifies (no pointless extra rounds).
+      chain = resolveTieChain(
+        originalCluster: cluster,
+        allTiebreakerMatches: tiebreakerMatches,
+        cutoffCount: qualifyCount,
+        clusterStartIndex: clusterStart,
+      );
       candidates = List.of(rawCandidates);
-      final startIndex = candidates.indexWhere((r) => r.teamId == cluster.first.teamId);
       for (var k = 0; k < chain.order.length; k++) {
-        candidates[startIndex + k] = chain.order[k];
+        candidates[clusterStart + k] = chain.order[k];
       }
     }
+    final runs = levelRuns(candidates, chain: chain, clusterStart: clusterStart);
     return _SectionPanel(
       label: label,
       section: section,
       qualifyCount: qualifyCount,
       candidates: candidates,
       chain: chain,
+      progress: leagueProgress(leagueMatches),
+      seedTies: seedDecidingTies(runs, qualifyCount: qualifyCount, sectioned: section != null),
     );
   }
 
@@ -304,10 +324,41 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
       }
     }
 
+    // The league must be finished for the standings to mean anything. If it
+    // isn't (or no league matches exist at all), ask first — an explicit
+    // override, never a silent pass.
+    final unfinished = [for (final p in panels) if (!p.progress.isFinished) p];
+    if (unfinished.isNotEmpty) {
+      final lines = [
+        for (final p in unfinished)
+          p.progress.total == 0
+              ? '${_panelPrefix(p)}no league matches exist.'
+              : '${_panelPrefix(p)}${p.progress.remaining} of ${p.progress.total} league matches are not completed.',
+      ].join('\n');
+      if (!mounted) return;
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('The league isn\'t finished'),
+          content: Text('$lines\n\nThe standings are not final, so the seeds could change. Finish the '
+              'league first, or generate anyway if you are sure.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Generate anyway'),
+            ),
+          ],
+        ),
+      );
+      if (go != true) return;
+    }
+
     for (final panel in panels) {
       final chain = panel.chain;
       if (chain != null && chain.contestedGroup != null && chain.contestedGroupMatches.isEmpty) {
         final names = chain.contestedGroup!.map((r) => r.teamName).join(' vs ');
+        if (!mounted) return;
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
@@ -328,6 +379,36 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
         );
         if (confirmed != true) return;
       }
+    }
+
+    // Teams that are dead level where their order decides who plays whom must
+    // be confirmed by the admin, never silently ordered by chance.
+    final seedTies = [
+      for (final p in panels)
+        for (final run in p.seedTies) (panel: p, run: run),
+    ];
+    if (seedTies.isNotEmpty) {
+      final lines = [
+        for (final t in seedTies)
+          '${_panelPrefix(t.panel)}${t.run.map((r) => r.teamName).join(' and ')} are level on points and score.',
+      ].join('\n');
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Confirm the seed order'),
+          content: Text('$lines\n\nTheir order decides who plays whom in the knockout (for example who goes '
+              'straight to the Final). Use the order shown on this screen? You can change it with the arrows.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Use this order'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
     }
 
     setState(() {
@@ -549,6 +630,17 @@ class _SectionPanelView extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: AppSpacing.xs),
             child: Text('Section ${panel.label}', style: textTheme.titleMedium),
           ),
+        if (!panel.progress.isFinished)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+            child: Text(
+              panel.progress.total == 0
+                  ? 'No league matches exist for this ${panel.label == null ? 'category' : 'section'} yet.'
+                  : 'League not finished: ${panel.progress.completed} of ${panel.progress.total} matches played. '
+                      'The standings below are not final.',
+              style: TextStyle(color: AppColors.warningAmber, fontWeight: FontWeight.w600),
+            ),
+          ),
         Text('Confirm seed order ${switch (qualifyCount) {
           2 => '(Seed 1 vs 2, straight to the Final)',
           3 => '(Seed 1 gets a bye; Seed 2 vs 3 for the other Final spot)',
@@ -564,14 +656,24 @@ class _SectionPanelView extends StatelessWidget {
               style: TextStyle(color: AppColors.warningAmber, fontWeight: FontWeight.w600),
             ),
           )
+        else if (panel.seedTies.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: AppSpacing.sm),
+            child: Text(
+              '${panel.seedTies.map((run) => run.map((r) => r.teamName).join(' and ')).join('; ')} '
+              'are dead level on points and total score. This doesn\'t change who qualifies, but '
+              'their order decides who plays whom in the bracket. Set the order with the arrows — '
+              'you will be asked to confirm it when you generate.',
+              style: TextStyle(color: AppColors.warningAmber, fontWeight: FontWeight.w600),
+            ),
+          )
         else if (hasTieWithinCutoff)
           Padding(
             padding: const EdgeInsets.only(top: AppSpacing.sm),
             child: Text(
               'Two or more teams above (highlighted) are dead level on points and '
-              "total score. This doesn't change who qualifies — only who plays whom "
-              'in the bracket. Use the arrows if you want to set their order, '
-              "otherwise it's fine to generate as-is.",
+              "total score. This doesn't change who qualifies or who they play, "
+              "so it's fine to generate as-is.",
               style: TextStyle(color: AppColors.warningAmber, fontWeight: FontWeight.w600),
             ),
           ),
