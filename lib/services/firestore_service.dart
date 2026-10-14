@@ -4,6 +4,7 @@ import '../core/constants.dart';
 import '../core/cricket/cricket_rules.dart';
 import '../core/cricket/cricket_toss.dart';
 import '../core/cricket/match_rules_stamp.dart';
+import '../core/cricket/match_scoring.dart';
 import '../core/cricket/tournament_plan.dart';
 import '../core/utils/bracket_resolver.dart';
 import '../core/utils/team_rename.dart';
@@ -347,19 +348,52 @@ class FirestoreService {
   /// removed once the match no longer exists (the rule allows it exactly
   /// then), so it is cleared second — and skipped, not fatal, if the rules
   /// haven't been updated yet (those orphaned entries are never read again).
-  Future<void> _deleteMatchDocs(List<DocumentReference<Map<String, dynamic>>> matchRefs) async {
-    for (final ref in matchRefs) {
-      final commentary = await ref.collection(commentaryCollection).get();
-      final pointLog = await ref.collection(pointLogCollection).get();
-      final batch = _db.batch();
-      batch.delete(ref);
-      for (final d in commentary.docs) {
-        batch.delete(d.reference);
+  Future<void> _deleteMatchDocs(List<DocumentReference<Map<String, dynamic>>> matchRefs) =>
+      deleteMatchTrees(matchRefs);
+
+  /// Deletes matches with every sub-collection they own (commentary, point
+  /// log, and the cricket ball log + its audit trail). A sub-collection the
+  /// rules don't cover yet can't even be read, so reads are tolerant: that
+  /// part is treated as empty and skipped.
+  Future<void> deleteMatchTrees(List<DocumentReference<Map<String, dynamic>>> matchRefs) async {
+    Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> docsOf(
+        DocumentReference<Map<String, dynamic>> ref, String name) async {
+      try {
+        return (await ref.collection(name).get()).docs;
+      } on FirebaseException catch (e) {
+        if (e.code == 'permission-denied') return const [];
+        rethrow;
       }
-      await batch.commit();
-      for (var i = 0; i < pointLog.docs.length; i += 400) {
+    }
+
+    for (final ref in matchRefs) {
+      final commentary = await docsOf(ref, commentaryCollection);
+      final balls = await docsOf(ref, 'balls');
+      final pointLog = await docsOf(ref, pointLogCollection);
+      final edits = await docsOf(ref, 'ballEdits');
+
+      // The match goes first (so the append-only logs below are orphaned and
+      // deletable), together with as many of its commentary/ball docs as fit.
+      final now = [...commentary, ...balls];
+      final firstBatch = _db.batch()..delete(ref);
+      for (final d in now.take(399)) {
+        firstBatch.delete(d.reference);
+      }
+      await firstBatch.commit();
+      for (var i = 399; i < now.length; i += 400) {
         final b = _db.batch();
-        for (final d in pointLog.docs.skip(i).take(400)) {
+        for (final d in now.skip(i).take(400)) {
+          b.delete(d.reference);
+        }
+        await b.commit();
+      }
+
+      // Append-only logs: the rules allow deleting them only once the match is
+      // gone. Skipped (not fatal) if the rules haven't been updated yet.
+      final later = [...pointLog, ...edits];
+      for (var i = 0; i < later.length; i += 400) {
+        final b = _db.batch();
+        for (final d in later.skip(i).take(400)) {
           b.delete(d.reference);
         }
         try {
@@ -752,5 +786,161 @@ class FirestoreService {
         .limit(limit)
         .snapshots()
         .map((snap) => snap.docs.map(PointLogEntry.fromFirestore).toList());
+  }
+
+  // --- Cricket live scoring ---
+  //
+  // The ball log lives in `matches/{id}/balls`, one document per event, id =
+  // zero-padded sequence number. Every change to the log is written in the
+  // SAME batch as the match doc's cached summary, so the two can never
+  // disagree — and a batch (unlike a transaction) is queued by Firestore when
+  // the ground has no signal, so scoring carries on offline.
+
+  static String ballDocId(int seq) => 'b${seq.toString().padLeft(6, '0')}';
+
+  CollectionReference<Map<String, dynamic>> _balls(String matchId) =>
+      _db.collection(matchesCollection).doc(matchId).collection('balls');
+
+  /// The whole ball log, oldest first (every innings).
+  Stream<List<LoggedEvent>> watchBalls(String matchId) {
+    return _balls(matchId)
+        .orderBy('seq')
+        .snapshots()
+        .map((snap) => [for (final d in snap.docs) LoggedEvent.fromMap(d.data())]);
+  }
+
+  Map<String, dynamic> _summaryUpdate(Map<String, dynamic> summary) => {
+        ...summary,
+        // The auto-generated line for the latest ball, shown as the match
+        // list preview exactly like admin-typed commentary.
+        'lastCommentaryAt': summary['lastCommentaryText'] == null ? null : FieldValue.serverTimestamp(),
+      };
+
+  /// Starts an innings (or just refreshes the summary): writes the summary
+  /// and, when [markLive], flips the match to live.
+  Future<void> saveCricketSummary(
+    String matchId,
+    Map<String, dynamic> summary, {
+    bool markLive = false,
+  }) async {
+    try {
+      await _db.collection(matchesCollection).doc(matchId).update({
+        ..._summaryUpdate(summary),
+        if (markLive) 'status': MatchStatus.live.name,
+      });
+    } catch (e) {
+      throw FirestoreWriteException('Could not save the innings.', e);
+    }
+  }
+
+  Future<void> appendCricketBall(String matchId, LoggedEvent ball, Map<String, dynamic> summary) async {
+    try {
+      final batch = _db.batch();
+      batch.set(_balls(matchId).doc(ballDocId(ball.seq)), {
+        ...ball.toMap(),
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      batch.update(_db.collection(matchesCollection).doc(matchId), _summaryUpdate(summary));
+      await batch.commit();
+    } catch (e) {
+      throw FirestoreWriteException('Could not save the ball.', e);
+    }
+  }
+
+  Map<String, dynamic> _audit(String action, int seq, LoggedEvent? before, LoggedEvent? after, String? by) => {
+        'action': action,
+        'ballSeq': seq,
+        'before': before?.toMap(),
+        'after': after?.toMap(),
+        'editedBy': by,
+        'editedAt': FieldValue.serverTimestamp(),
+      };
+
+  /// Replaces one ball's inputs. Later balls are never touched — the replay
+  /// re-derives everything after it. The audit entry keeps the old inputs.
+  Future<void> editCricketBall(
+    String matchId, {
+    required LoggedEvent before,
+    required LoggedEvent after,
+    required Map<String, dynamic> summary,
+    String? editedBy,
+  }) async {
+    try {
+      final batch = _db.batch();
+      batch.update(_balls(matchId).doc(ballDocId(before.seq)), after.toMap());
+      batch.set(_db.collection(matchesCollection).doc(matchId).collection('ballEdits').doc(),
+          _audit('edit', before.seq, before, after, editedBy));
+      batch.update(_db.collection(matchesCollection).doc(matchId), _summaryUpdate(summary));
+      await batch.commit();
+    } catch (e) {
+      throw FirestoreWriteException('Could not save the change.', e);
+    }
+  }
+
+  /// Removes one ball ([undo] = the scorer's Undo button on the last ball).
+  Future<void> deleteCricketBall(
+    String matchId, {
+    required LoggedEvent before,
+    required Map<String, dynamic> summary,
+    bool undo = false,
+    String? editedBy,
+  }) async {
+    try {
+      final batch = _db.batch();
+      batch.delete(_balls(matchId).doc(ballDocId(before.seq)));
+      batch.set(_db.collection(matchesCollection).doc(matchId).collection('ballEdits').doc(),
+          _audit(undo ? 'undo' : 'delete', before.seq, before, null, editedBy));
+      batch.update(_db.collection(matchesCollection).doc(matchId), _summaryUpdate(summary));
+      await batch.commit();
+    } catch (e) {
+      throw FirestoreWriteException('Could not remove the ball.', e);
+    }
+  }
+
+  /// "Accept as is" for review flags on one ball.
+  Future<void> setBallAcknowledged(String matchId, int seq, Set<String> codes) async {
+    try {
+      await _balls(matchId).doc(ballDocId(seq)).update({'acknowledgedFlags': codes.toList()..sort()});
+    } catch (e) {
+      throw FirestoreWriteException('Could not save the change.', e);
+    }
+  }
+
+  /// Saves the final result, and fills the next knockout slots in the same
+  /// batch (single-slot writes, see [saveResultAndResolveSlots]).
+  Future<void> finishCricketMatch(
+    String matchId, {
+    required Map<String, dynamic> resultFields,
+    required List<SlotWrite> slotWrites,
+  }) async {
+    try {
+      final batch = _db.batch();
+      batch.update(_db.collection(matchesCollection).doc(matchId), resultFields);
+      for (final e in slotWriteFields(slotWrites).entries) {
+        batch.update(_db.collection(matchesCollection).doc(e.key), e.value);
+      }
+      await batch.commit();
+    } catch (e) {
+      throw FirestoreWriteException('Could not save the result.', e);
+    }
+  }
+
+  /// Reopens a finished cricket match so its balls can be edited again, and
+  /// puts back to TBD any knockout slots its result had filled.
+  Future<void> reopenCricketMatch(String matchId, {required List<SlotWrite> clears}) async {
+    try {
+      final batch = _db.batch();
+      batch.update(_db.collection(matchesCollection).doc(matchId), {
+        'status': MatchStatus.live.name,
+        'result': null,
+        'resultText': null,
+      });
+      for (final e in slotWriteFields(clears).entries) {
+        batch.update(_db.collection(matchesCollection).doc(e.key), e.value);
+      }
+      await batch.commit();
+    } catch (e) {
+      throw FirestoreWriteException('Could not reopen the match.', e);
+    }
   }
 }

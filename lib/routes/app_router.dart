@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../core/constants.dart';
 import '../screens/admin/admin_cricket_match_screen.dart';
+import '../screens/admin/admin_cricket_scoring_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/admin/admin_match_edit_screen.dart';
 import '../screens/admin/admin_match_form_screen.dart';
@@ -164,6 +165,10 @@ GoRouter buildRouter(AuthState authState) {
         builder: (context, state) => sport(state) == Sport.cricket
             ? AdminCricketMatchScreen(matchId: state.pathParameters['id']!)
             : AdminMatchEditScreen(matchId: state.pathParameters['id']!),
+      ),
+      GoRoute(
+        path: '/admin/matches/:id/score',
+        builder: (context, state) => AdminCricketScoringScreen(matchId: state.pathParameters['id']!),
       ),
       GoRoute(
         path: '/admin/schedule/generate',

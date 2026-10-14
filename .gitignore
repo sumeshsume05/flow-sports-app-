@@ -59,3 +59,7 @@ release/version.json
 
 # Firebase CLI's local hosting deploy cache
 .firebase/
+
+# rules-test dependencies
+test/firestore_rules/node_modules/
+test/firestore_rules/package-lock.json

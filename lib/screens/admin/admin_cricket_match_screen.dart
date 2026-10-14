@@ -316,6 +316,31 @@ class _AdminCricketMatchScreenState extends State<AdminCricketMatchScreen> {
         children: [
           Text('$nameA  vs  $nameB', style: textTheme.titleLarge),
           const SizedBox(height: AppSpacing.md),
+          card('Live scoring', [
+            if (match.resultText != null)
+              Text(match.resultText!, style: textTheme.titleMedium)
+            else if (match.summaryText != null)
+              Text(match.summaryText!, style: textTheme.titleMedium)
+            else
+              Text(saved ? 'Ready to start.' : 'Save the rules, both squads and the toss first (below).',
+                  style: textTheme.bodyMedium),
+            const SizedBox(height: AppSpacing.sm),
+            FilledButton.icon(
+              icon: const Icon(Icons.sports_cricket),
+              label: Text(match.status == MatchStatus.completed
+                  ? 'View scoring'
+                  : match.innings.isEmpty
+                      ? 'Start scoring'
+                      : 'Continue scoring'),
+              onPressed: saved ? () => context.push('/admin/matches/${match.id}/score') : null,
+            ),
+            if (saved && match.innings.isNotEmpty && match.status != MatchStatus.completed)
+              Padding(
+                padding: const EdgeInsets.only(top: AppSpacing.xs),
+                child: Text('Scoring uses the saved setup — save any changes below first.',
+                    style: textTheme.bodySmall),
+              ),
+          ]),
           if (match.status != MatchStatus.upcoming)
             Container(
               margin: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -439,7 +464,7 @@ class _AdminCricketMatchScreenState extends State<AdminCricketMatchScreen> {
           const SizedBox(height: AppSpacing.sm),
           Text(
             saved
-                ? 'Setup saved. Live ball-by-ball scoring is coming in the next update.'
+                ? 'Setup saved. Use "Start scoring" at the top to score the match ball by ball.'
                 : 'Pick rules, both squads and the toss, then save.',
             style: textTheme.bodySmall,
           ),

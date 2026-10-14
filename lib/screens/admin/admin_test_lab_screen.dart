@@ -345,10 +345,44 @@ class _SportLabState extends State<_SportLab> {
                     ],
                   ),
                 ] else if (widget.sport == Sport.cricket && counts.matches > 0) ...[
-                  const SizedBox(height: AppSpacing.sm),
+                  const SizedBox(height: AppSpacing.md),
+                  Text('Play matches automatically', style: textTheme.titleSmall),
+                  const SizedBox(height: 2),
                   Text(
-                    'Automatic results for cricket arrive with live scoring.',
+                    'Plays whole matches ball by ball with the real scoring engine (squads, toss, both innings, '
+                    'result) — then open any match to see its balls, edit one, or reopen it. Each button only '
+                    'plays matches that have no result yet: league first, then tie-breakers, then the knockout. '
+                    'To try scoring by hand instead, open a match from Matches and tap Start scoring.',
                     style: textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: [
+                      OutlinedButton(
+                        onPressed: _busy
+                            ? null
+                            : () => _run('Playing league…', () async {
+                                  final r = await _service.playCricketStage(widget.sport, widget.season,
+                                      stage: 'league');
+                                  return r.played == 0 && r.note == null
+                                      ? 'Nothing to play — every league match already has a result.'
+                                      : 'Played ${r.played} league matches.${r.note == null ? '' : ' ${r.note}'}';
+                                }),
+                        child: const Text('Play league (random)'),
+                      ),
+                      OutlinedButton(
+                        onPressed: _busy
+                            ? null
+                            : () => _run('Playing knockout…', () async {
+                                  final r = await _service.playCricketKnockout(widget.sport, widget.season);
+                                  return 'Played ${r.played} knockout match${r.played == 1 ? '' : 'es'}.'
+                                      '${r.note == null ? '' : ' ${r.note}'}';
+                                }),
+                        child: const Text('Play knockout'),
+                      ),
+                    ],
                   ),
                 ],
                 if (hasData) ...[

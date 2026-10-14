@@ -3,6 +3,10 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
+import '../core/cricket/auto_play.dart';
+import '../core/cricket/cricket_toss.dart';
+import '../core/cricket/match_result.dart';
+import '../core/cricket/match_scoring.dart';
 import '../core/test_lab/test_scenarios.dart';
 import '../core/utils/bracket_resolver.dart';
 import '../models/match.dart';
@@ -53,41 +57,11 @@ class TestLabService {
     }
   }
 
-  /// Deletes one match together with its sub-collections. The match and its
-  /// commentary go in one batch; the append-only point log can only be removed
-  /// once the match no longer exists (the rule allows it exactly then), so it
-  /// is cleared second — and skipped, not fatal, if the rules haven't been
-  /// updated yet (those orphaned entries sit under a deleted match and are
-  /// never read again).
-  Future<void> _deleteMatchWithSubcollections(DocumentReference<Map<String, dynamic>> ref) async {
-    // Sub-collections that have no Firestore rule yet (the cricket ball log
-    // arrives with live scoring) can't even be read, so reading is tolerant:
-    // anything unreadable is treated as empty and skipped.
-    Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> docsOf(String name) async {
-      try {
-        return (await ref.collection(name).get()).docs;
-      } on FirebaseException catch (e) {
-        if (e.code == 'permission-denied') return const [];
-        rethrow;
-      }
-    }
-
-    final commentary = await docsOf(commentaryCollection);
-    final pointLog = await docsOf(pointLogCollection);
-    final balls = await docsOf('balls');
-    final edits = await docsOf('ballEdits');
-    final batch = _db.batch();
-    batch.delete(ref);
-    for (final d in [...commentary, ...balls, ...edits]) {
-      batch.delete(d.reference);
-    }
-    await batch.commit();
-    try {
-      await _deleteRefs([for (final d in pointLog) d.reference]);
-    } on FirebaseException catch (e) {
-      if (e.code != 'permission-denied') rethrow;
-    }
-  }
+  /// Deletes one match together with its sub-collections (commentary, point
+  /// log, cricket balls and their audit trail) — shared with the real
+  /// delete-match path so both clear exactly the same things.
+  Future<void> _deleteMatchWithSubcollections(DocumentReference<Map<String, dynamic>> ref) =>
+      _firestoreService.deleteMatchTrees([ref]);
 
   /// Removes every test team and match (and their sub-collections and the
   /// stored tournament plan) for [sport]. Real categories are never queried.
@@ -226,5 +200,173 @@ class TestLabService {
     }
     if (all.every((m) => m.result != null)) return 'The whole knockout is played.';
     return null;
+  }
+
+  // --- Cricket auto-play ---
+
+  /// Plays one test cricket match completely with the real scoring engine:
+  /// picks the squads (the match's own, else the first players of each team),
+  /// tosses, then writes a rule-abiding ball-by-ball log, the cached summary
+  /// and the result — exactly what a scorer's taps would have produced. Any
+  /// balls already scored for it are replaced. Returns null on success, or why
+  /// the match was skipped.
+  Future<String?> _playCricketMatch(
+    Match m,
+    Random rnd, {
+    List<Match> otherKnockout = const [],
+  }) async {
+    final teamA = Team.fromFirestore(await _db.collection(teamsCollection).doc(m.teamA.teamId).get());
+    final teamB = Team.fromFirestore(await _db.collection(teamsCollection).doc(m.teamB.teamId).get());
+    final rules = m.rules ?? await _firestoreService.watchCricketRules().first;
+
+    List<String> squad(List<String> saved, Team t) {
+      final active = t.activePlayers.map((p) => p.id).toSet();
+      final keep = saved.where(active.contains).toList();
+      return keep.length >= 2 ? keep : t.activePlayers.take(rules.squadSize).map((p) => p.id).toList();
+    }
+
+    final lineupA = squad(m.lineupA, teamA);
+    final lineupB = squad(m.lineupB, teamB);
+    if (lineupA.length < 2 || lineupB.length < 2) {
+      return '${m.label}: each team needs at least 2 players (add them in Teams > Players).';
+    }
+
+    final isKnockout = m.stage == MatchStage.knockout;
+    CricketToss? toss;
+    SimulatedMatch? sim;
+    MatchScoringState? state;
+    for (var attempt = 0; attempt < 40; attempt++) {
+      toss = CricketToss(winner: rnd.nextBool() ? 'A' : 'B', elected: rnd.nextBool() ? 'bat' : 'bowl');
+      sim = simulateMatch(
+        rules: rules,
+        lineupA: lineupA,
+        lineupB: lineupB,
+        battingFirst: toss.battingFirstSide,
+        random: rnd,
+      );
+      state = deriveMatchState(
+        rules: rules,
+        lineupA: lineupA,
+        lineupB: lineupB,
+        toss: toss,
+        starts: sim.starts,
+        events: sim.events,
+        nameA: m.teamA.name ?? 'Team A',
+        nameB: m.teamB.name ?? 'Team B',
+      );
+      // A knockout needs a winner (super overs come later), so replay a tie.
+      if (!isKnockout || state.result?.winner != CricketWinner.tie) break;
+    }
+    if (state == null || state.result == null || sim == null || toss == null) {
+      return '${m.label}: could not play it.';
+    }
+    if (isKnockout && state.result!.winner == CricketWinner.tie) {
+      return '${m.label}: stayed tied after many tries — super overs aren\'t built yet.';
+    }
+
+    final names = {for (final p in [...teamA.players, ...teamB.players]) p.id: p.name};
+    final fields = {
+      ...summaryFields(
+        state: state,
+        starts: sim.starts,
+        nameOf: (id) => names[id] ?? 'Player',
+        nameA: m.teamA.name ?? 'Team A',
+        nameB: m.teamB.name ?? 'Team B',
+        rules: rules,
+      ),
+      ...resultFields(state),
+      'rules': rules.toMap(),
+      'lineupA': lineupA,
+      'lineupB': lineupB,
+      'toss': toss.toMap(),
+    };
+
+    // Replace any balls scored earlier (read tolerantly: the rules may not be deployed yet).
+    final ballsRef = _db.collection(matchesCollection).doc(m.id).collection('balls');
+    final old = <DocumentReference<Map<String, dynamic>>>[];
+    try {
+      old.addAll((await ballsRef.get()).docs.map((d) => d.reference));
+    } on FirebaseException catch (e) {
+      if (e.code != 'permission-denied') rethrow;
+    }
+    await _deleteRefs(old);
+
+    final writes = [for (final e in sim.events) e];
+    for (var i = 0; i < writes.length; i += 400) {
+      final batch = _db.batch();
+      for (final e in writes.skip(i).take(400)) {
+        batch.set(ballsRef.doc(FirestoreService.ballDocId(e.seq)), {
+          ...e.toMap(),
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+      await batch.commit();
+    }
+
+    var slotWrites = <SlotWrite>[];
+    if (isKnockout) {
+      final completed = Match(
+        id: m.id,
+        sport: m.sport,
+        category: m.category,
+        season: m.season,
+        stage: m.stage,
+        matchNumber: m.matchNumber,
+        label: m.label,
+        matchCode: m.matchCode,
+        teamA: m.teamA,
+        teamB: m.teamB,
+        scoreA: fields['scoreA'] as int,
+        scoreB: fields['scoreB'] as int,
+        result: fields['result'] == 'teamA' ? MatchResult.teamA : MatchResult.teamB,
+        status: MatchStatus.completed,
+        notifyTopic: m.notifyTopic,
+      );
+      slotWrites = dependentSlotWrites(completed: completed, otherKnockoutMatches: otherKnockout);
+    }
+    await _firestoreService.finishCricketMatch(m.id, resultFields: fields, slotWrites: slotWrites);
+    return null;
+  }
+
+  /// Plays every unplayed cricket test match of [stage] ('league' or
+  /// 'tiebreaker'). Returns how many were played and a note for any skipped.
+  Future<({int played, String? note})> playCricketStage(String sport, String season,
+      {required String stage, Random? random}) async {
+    final rnd = random ?? Random();
+    final snap = await _matches(sport, season).where('stage', isEqualTo: stage).get();
+    final todo = unplayedMatches(snap.docs.map(Match.fromFirestore).toList());
+    var played = 0;
+    String? note;
+    for (final m in todo) {
+      final problem = await _playCricketMatch(m, rnd);
+      if (problem == null) {
+        played++;
+      } else {
+        note = problem;
+      }
+    }
+    return (played: played, note: note);
+  }
+
+  /// Plays the cricket knockout one match at a time so each result fills the
+  /// next round, like saving real results.
+  Future<({int played, String? note})> playCricketKnockout(String sport, String season, {Random? random}) async {
+    final rnd = random ?? Random();
+    var played = 0;
+    for (var guard = 0; guard < 20; guard++) {
+      final all = (await _matches(sport, season).where('stage', isEqualTo: 'knockout').get())
+          .docs
+          .map(Match.fromFirestore)
+          .toList()
+        ..sort((a, b) => a.matchNumber.compareTo(b.matchNumber));
+      final next = all
+          .where((m) => m.result == null && m.teamA.teamId != null && m.teamB.teamId != null)
+          .firstOrNull;
+      if (next == null) return (played: played, note: _knockoutNote(all));
+      final problem = await _playCricketMatch(next, rnd, otherKnockout: all.where((m) => m.id != next.id).toList());
+      if (problem != null) return (played: played, note: problem);
+      played++;
+    }
+    return (played: played, note: null);
   }
 }

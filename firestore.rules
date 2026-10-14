@@ -31,6 +31,24 @@ service cloud.firestore {
         (!('teamB' in counts) || (counts.teamB is int && counts.teamB >= 0));
     }
 
+    // One cricket ball-log entry (matches/{id}/balls). Only INPUTS are stored —
+    // the scorer's own entries — so the checks are about shape and sane ranges:
+    // every derived number (strike, over, totals) is recomputed on read.
+    function validBall(d) {
+      return d.seq is int && d.seq > 0 &&
+        d.innings is int && d.innings >= 0 && d.innings <= 3 &&
+        d.kind in ['ball', 'swapStrike', 'retire', 'endInnings'] &&
+        (!('delivery' in d) || d.delivery in ['legal', 'wide', 'noBall', 'deadBall']) &&
+        (!('runType' in d) || d.runType in ['none', 'bat', 'bye', 'legBye']) &&
+        (!('boundary' in d) || d.boundary in ['none', 'four', 'six']) &&
+        (!('runs' in d) || (d.runs is int && d.runs >= 0 && d.runs <= 20)) &&
+        (!('completedRunsOverride' in d) || d.completedRunsOverride == null ||
+          (d.completedRunsOverride is int && d.completedRunsOverride >= 0 && d.completedRunsOverride <= 20)) &&
+        (!('wicket' in d) || d.wicket == null ||
+          d.wicket.kind in ['bowled', 'caught', 'lbw', 'runOut', 'stumped', 'hitWicket',
+                            'obstructingField', 'hitBallTwice', 'handledBall']);
+    }
+
     // config/chatSettings not existing yet means chat has never been
     // toggled off — defaults to enabled so this is backward compatible.
     // This is the enforcement layer that actually matters: the app is a
@@ -85,6 +103,27 @@ service cloud.firestore {
           request.resource.data.scoreA is int && request.resource.data.scoreA >= 0 &&
           request.resource.data.scoreB is int && request.resource.data.scoreB >= 0 &&
           request.resource.data.createdAt == request.time;
+        allow update: if false;
+        allow delete: if isAdmin() &&
+          !exists(/databases/$(database)/documents/matches/$(matchId));
+      }
+
+      // Cricket ball log. Unlike the append-only pointLog, a ball can be edited
+      // or deleted by an admin — that is the "fix any ball and the scorecard
+      // follows" feature. A new ball must carry a real server timestamp.
+      match /balls/{ballId} {
+        allow read: if true;
+        allow create: if isAdmin() && validBall(request.resource.data) &&
+          request.resource.data.createdAt == request.time;
+        allow update: if isAdmin() && validBall(request.resource.data);
+        allow delete: if isAdmin();
+      }
+
+      // Audit trail of ball edits/deletes/undos: admin-readable, create-only.
+      // Like the pointLog it can only be cleared once the match itself is gone.
+      match /ballEdits/{editId} {
+        allow read: if isAdmin();
+        allow create: if isAdmin() && request.resource.data.editedAt == request.time;
         allow update: if false;
         allow delete: if isAdmin() &&
           !exists(/databases/$(database)/documents/matches/$(matchId));
