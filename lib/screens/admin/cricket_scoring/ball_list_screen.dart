@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/cricket/commentary_text.dart';
 import '../../../core/cricket/cricket_event.dart';
+import '../../../core/cricket/match_display.dart';
 import '../../../core/cricket/match_scoring.dart';
 import '../../../core/design/app_colors.dart';
 import '../../../core/design/app_spacing.dart';
@@ -52,7 +53,16 @@ class _CricketBallListScreenState extends State<CricketBallListScreen> {
             rows.add(Padding(
               padding: const EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xs),
               child: Text(
-                'Over ${rec.over + 1}${over?.bowlerId == null ? '' : ' — ${c.nameOf(over!.bowlerId!)}'}',
+                over == null
+                    ? 'Over ${rec.over + 1}'
+                    : OverGroup(
+                        number: over.over + 1,
+                        bowlerName: over.bowlerId == null ? null : c.nameOf(over.bowlerId!),
+                        runs: over.balls.fold(0, (s, b) => s + b.teamRuns),
+                        wickets: over.balls.where((b) => b.isWicket).length,
+                        complete: over.complete,
+                        lines: const [],
+                      ).header,
                 style: textTheme.titleSmall,
               ),
             ));
@@ -89,11 +99,18 @@ class _CricketBallListScreenState extends State<CricketBallListScreen> {
                       color: rec?.isWicket == true ? Colors.white : null)),
             ),
             title: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
-            subtitle: flags.isEmpty
+            subtitle: (rec == null && flags.isEmpty)
                 ? null
-                : Text(
-                    flags.map((f) => f.message).join(' '),
-                    style: TextStyle(color: flags.every((f) => f.acknowledged) ? null : AppColors.warningAmber),
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (rec != null) Text(ballLabelLong(rec)),
+                      if (flags.isNotEmpty)
+                        Text(
+                          flags.map((f) => f.message).join(' '),
+                          style: TextStyle(color: flags.every((f) => f.acknowledged) ? null : AppColors.warningAmber),
+                        ),
+                    ],
                   ),
             trailing: flags.isEmpty
                 ? null
@@ -147,7 +164,10 @@ class _CricketBallListScreenState extends State<CricketBallListScreen> {
                             'Fix the ball, or accept it as it is.'),
                       ),
                       if (!c.isCompleted)
-                        TextButton(onPressed: () => _acceptAll(c, view), child: const Text('Accept all')),
+                        TextButton(
+                          onPressed: () => _confirmAcceptAll(context, c, view),
+                          child: const Text('Accept all'),
+                        ),
                     ],
                   ),
                 ),
@@ -158,6 +178,23 @@ class _CricketBallListScreenState extends State<CricketBallListScreen> {
         );
       },
     );
+  }
+
+  Future<void> _confirmAcceptAll(BuildContext context, CricketScoringController c, InningsView view) async {
+    final n = view.result.blockingFlags.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Accept $n warning${n == 1 ? '' : 's'} as they are?'),
+        content: const Text('The balls stay exactly as entered and the warnings stop blocking Save result. '
+            'Check each ball first if you are not sure.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Accept all')),
+        ],
+      ),
+    );
+    if (ok == true) await _acceptAll(c, view);
   }
 
   Future<void> _acceptAll(CricketScoringController c, InningsView view) async {

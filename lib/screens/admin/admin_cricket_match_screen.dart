@@ -4,6 +4,9 @@ import 'package:intl/intl.dart';
 
 import '../../core/cricket/cricket_rules.dart';
 import '../../core/cricket/cricket_toss.dart';
+import '../../core/cricket/match_display.dart';
+import '../../core/cricket/match_scoring.dart';
+import '../../core/cricket/setup_guard.dart';
 import '../../core/cricket/rules_summary.dart';
 import '../../core/cricket/tournament_plan.dart';
 import '../../core/design/app_colors.dart';
@@ -118,13 +121,83 @@ class _AdminCricketMatchScreenState extends State<AdminCricketMatchScreen> {
     final rules = _rules!;
     List<String> ordered(Team? t, Set<String>? sel) =>
         t == null || sel == null ? const [] : [for (final p in t.players) if (sel.contains(p.id)) p.id];
+    final lineupA = ordered(teamA, _selectedA);
+    final lineupB = ordered(teamB, _selectedB);
+
+    // Once scoring has started, a change can break the scorecard: check first.
+    final started = match.innings.isNotEmpty;
+    final finished = match.status == MatchStatus.completed;
+    if (started || finished) {
+      List<LoggedEvent> events = const [];
+      var couldNotCheck = false;
+      try {
+        events = await _firestoreService.watchBalls(match.id).first.timeout(const Duration(seconds: 8));
+      } catch (_) {
+        couldNotCheck = true;
+      }
+      final names = playerNameLookup(teamA, teamB);
+      final check = checkSetupChange(
+        started: started,
+        finished: finished,
+        oldRules: match.rules,
+        newRules: rules,
+        oldToss: match.toss,
+        newToss: _toss,
+        oldLineupA: match.lineupA,
+        oldLineupB: match.lineupB,
+        newLineupA: lineupA,
+        newLineupB: lineupB,
+        starts: [for (final r in match.innings) r.start],
+        events: events,
+        nameOf: names,
+      );
+      if (!mounted) return;
+      if (check.blockers.isNotEmpty) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('This change can\'t be saved'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [for (final b in check.blockers) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(b))],
+            ),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
+          ),
+        );
+        return;
+      }
+      final warnings = [
+        ...check.warnings,
+        if (couldNotCheck) 'The ball log could not be read, so the squad change could not be checked.',
+      ];
+      if (warnings.isNotEmpty) {
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Change a match that has started?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [for (final w in warnings) Padding(padding: const EdgeInsets.only(bottom: 6), child: Text(w))],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+              FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save anyway')),
+            ],
+          ),
+        );
+        if (ok != true) return;
+      }
+    }
+
     setState(() => _saving = true);
     try {
       await _firestoreService.saveCricketSetup(
         match.id,
         rules: rules,
-        lineupA: ordered(teamA, _selectedA),
-        lineupB: ordered(teamB, _selectedB),
+        lineupA: lineupA,
+        lineupB: lineupB,
         toss: _toss,
       );
       _say('Match setup saved.');

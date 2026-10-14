@@ -95,6 +95,7 @@ dynamic get _r => c.state!.current!.result;
 CricketEvent _bat(int runs, {Boundary b = Boundary.none}) => CricketEvent.bat(0, 'b1', runs, boundary: b);
 
 void main() {
+  _clarityTests();
   group('Delivery', () {
     testWidgets('Normal → Wide: one wide run, not a legal ball, strike does not change', (tester) async {
       await _open(tester, [_bat(1), _bat(0), _bat(0)]); // ball 1 is a single: A2 faces balls 2-3
@@ -316,6 +317,37 @@ void main() {
       await _tap(tester, find.widgetWithText(FilledButton, 'Delete'));
       expect((await _stored(tester)).length, 2);
       expect(_r.runs, 4);
+    });
+  });
+}
+
+void _clarityTests() {
+  group('Clarity', () {
+    testWidgets('names who bowled, who faced and what was recorded', (tester) async {
+      await _open(tester, [_bat(1), _bat(4, b: Boundary.four)]);
+      await _openEditor(tester, 1);
+      expect(find.text('Edit ball — Over 1 · Ball 2'), findsOneWidget);
+      expect(find.text('Bowler'), findsWidgets);
+      expect(find.text('Batter on strike'), findsOneWidget);
+      expect(find.text('Other batter'), findsOneWidget);
+      // ball 1 was a single, so A2 faces ball 2 and A1 is at the other end
+      expect(find.text('Recorded as: FOUR! A2 hits B1 for 4'), findsOneWidget);
+    });
+
+    testWidgets('previews the effect live: four → single', (tester) async {
+      await _open(tester, [_bat(0), _bat(4, b: Boundary.four), _bat(2)]);
+      await _openEditor(tester, 1);
+      expect(find.text('If you save this'), findsOneWidget);
+      expect(find.text('Innings score stays 6/0'), findsOneWidget);
+      // 4 → 1: tap "−" three times and clear the boundary
+      await _tap(tester, find.widgetWithText(ChoiceChip, 'No'));
+      for (var i = 0; i < 3; i++) {
+        await _tap(tester, find.widgetWithIcon(IconButton, Icons.remove));
+      }
+      expect(find.text('Innings score: 6/0 → 3/0'), findsOneWidget);
+      expect(find.textContaining('is faced by'), findsOneWidget);
+      // nothing was saved by looking
+      expect(_r.runs, 6);
     });
   });
 }

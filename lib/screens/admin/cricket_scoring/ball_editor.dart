@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/cricket/commentary_text.dart';
 import '../../../core/cricket/cricket_event.dart';
+import '../../../core/cricket/edit_preview.dart';
 import '../../../core/cricket/cricket_rules.dart';
 import '../../../core/cricket/innings_replay.dart';
+import '../../../core/cricket/match_display.dart';
 import '../../../core/cricket/match_scoring.dart';
 import '../../../core/design/app_colors.dart';
 import '../../../core/design/app_spacing.dart';
@@ -144,12 +147,21 @@ class _BallEditorState extends State<_BallEditor> {
       controller: widget.scroll,
       padding: const EdgeInsets.fromLTRB(AppSpacing.md, 0, AppSpacing.md, AppSpacing.xl),
       children: [
-        Text(record == null ? 'Edit ball' : 'Edit ball — over ${record.over + 1}', style: textTheme.titleLarge),
+        Text(record == null ? 'Edit ball' : 'Edit ball — ${ballPlace(record)}', style: textTheme.titleLarge),
         const SizedBox(height: AppSpacing.xs),
         Text(
           'Only this ball changes. Later balls keep what you entered; the score, strike and overs are worked out again.',
           style: textTheme.bodySmall,
         ),
+        if (record != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _WhoCard(
+            bowler: record.bowlerId == null ? null : nameOf(record.bowlerId!),
+            striker: record.strikerId == null ? null : nameOf(record.strikerId!),
+            nonStriker: record.nonStrikerId == null ? null : nameOf(record.nonStrikerId!),
+            now: ballCommentary(record, nameOf, freeHitRule: _c.rules.freeHit),
+          ),
+        ],
         for (final f in flags)
           Container(
             margin: const EdgeInsets.only(top: AppSpacing.sm),
@@ -328,6 +340,21 @@ class _BallEditorState extends State<_BallEditor> {
               }),
             ),
         ],
+        if (view != null && result != null) ...[
+          const SizedBox(height: AppSpacing.md),
+          _PreviewCard(
+            preview: _hasWicket && _wicket == null
+                ? null
+                : previewEdit(
+                    rules: _c.rules,
+                    setup: result.setup,
+                    events: view.events,
+                    edited: _built(),
+                    nameOf: nameOf,
+                  ),
+            waitingForWicket: _hasWicket && _wicket == null,
+          ),
+        ],
         const SizedBox(height: AppSpacing.lg),
         FilledButton(
           onPressed: _saving || (_hasWicket && _wicket == null)
@@ -359,5 +386,83 @@ class _BallEditorState extends State<_BallEditor> {
       ),
     );
     if (ok == true) await _run(() => _c.deleteBall(widget.ev));
+  }
+}
+
+/// Who was involved in the ball being edited, in words — the batter and the
+/// bowler are named by role so the two can't be mixed up.
+class _WhoCard extends StatelessWidget {
+  final String? bowler;
+  final String? striker;
+  final String? nonStriker;
+  final String now;
+
+  const _WhoCard({required this.bowler, required this.striker, required this.nonStriker, required this.now});
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    Widget row(String role, String? name) => Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          child: Row(
+            children: [
+              SizedBox(width: 118, child: Text(role, style: textTheme.bodySmall)),
+              Expanded(child: Text(name ?? '—', style: const TextStyle(fontWeight: FontWeight.w600))),
+            ],
+          ),
+        );
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm + 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          row('Bowler', bowler),
+          row('Batter on strike', striker),
+          row('Other batter', nonStriker),
+          const SizedBox(height: AppSpacing.xs),
+          Text('Recorded as: $now', style: textTheme.bodyMedium),
+        ],
+      ),
+    );
+  }
+}
+
+/// "If you save this" — the effect of the edit as it stands in the form.
+class _PreviewCard extends StatelessWidget {
+  final EditPreview? preview;
+  final bool waitingForWicket;
+
+  const _PreviewCard({required this.preview, required this.waitingForWicket});
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final warns = preview?.warns ?? false;
+    final color = warns ? AppColors.warningAmber : Theme.of(context).colorScheme.primary;
+    final lines = waitingForWicket
+        ? const ['Fill in the wicket details below to see what changes.']
+        : (preview?.lines ?? const ['This change can\'t be previewed.']);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm + 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('If you save this', style: textTheme.labelLarge?.copyWith(color: color)),
+          const SizedBox(height: 2),
+          for (final l in lines) Text(l),
+        ],
+      ),
+    );
   }
 }

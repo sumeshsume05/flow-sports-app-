@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart' show Share;
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
+import '../../core/constants.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/commentary_ticker.dart';
@@ -12,6 +13,7 @@ import '../../widgets/point_log_ticker.dart';
 import '../../widgets/prediction_widget.dart';
 import '../../widgets/reaction_bar.dart';
 import '../../widgets/status_badge.dart';
+import 'cricket_match_detail.dart';
 
 class MatchDetailScreen extends StatelessWidget {
   final String matchId;
@@ -34,6 +36,7 @@ class MatchDetailScreen extends StatelessWidget {
           if (match == null) {
             return const Center(child: Text('Match not found.'));
           }
+          if (match.sport == Sport.cricket) return CricketMatchDetail(match: match, onShare: () => _share(match));
           return Padding(
             padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
@@ -110,7 +113,9 @@ class MatchDetailScreen extends StatelessWidget {
   void _share(Match match) {
     final a = match.teamA.name ?? 'TBD';
     final b = match.teamB.name ?? 'TBD';
-    final text = match.status == MatchStatus.completed
+    final text = match.sport == Sport.cricket
+        ? '${match.label}: $a vs $b — ${match.resultText ?? match.summaryText ?? match.status.name}'
+        : match.status == MatchStatus.completed
         ? '${match.label}: $a ${match.scoreA} - ${match.scoreB} $b'
         : '${match.label}: $a vs $b (${match.status.name})';
     Share.share(text);

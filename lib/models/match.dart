@@ -160,6 +160,10 @@ class Match {
   final Map<String, dynamic>? live;
   final String? resultText;
 
+  /// "Arun 12* (8), Gopi 3 (2) · Bowling: Dinesh 1-0-8-1" while live — who is
+  /// batting and bowling, for the match card.
+  final String? liveText;
+
   Match({
     required this.id,
     required this.sport,
@@ -196,6 +200,7 @@ class Match {
     this.summaryText,
     this.live,
     this.resultText,
+    this.liveText,
   });
 
   factory Match.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -243,6 +248,7 @@ class Match {
       summaryText: data['summaryText'] as String?,
       live: data['live'] is Map ? Map<String, dynamic>.from(data['live'] as Map) : null,
       resultText: data['resultText'] as String?,
+      liveText: data['liveText'] as String?,
     );
   }
 
@@ -312,6 +318,7 @@ class Match {
         summaryText: summaryText,
         live: live,
         resultText: resultText,
+        liveText: liveText,
       );
 
   /// A match counts as played only when it is both marked completed *and*

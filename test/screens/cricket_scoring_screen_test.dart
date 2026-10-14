@@ -80,6 +80,10 @@ Future<void> _tapInSheet(WidgetTester tester, Finder f) async {
     } on StateError {
       await tester.scrollUntilVisible(f, -150, scrollable: sheet);
     }
+  } else {
+    // Built but maybe below the fold of the sheet: scroll it into view first.
+    await tester.ensureVisible(f.first);
+    await tester.pump();
   }
   await _tap(tester, f);
 }
@@ -180,10 +184,10 @@ void main() {
         expect(find.text('6/0'), findsOneWidget);
 
         await _tap(tester, find.byTooltip('All balls — edit'));
-        expect(find.text('Over 1 — B1'), findsOneWidget);
+        expect(find.textContaining('Over 1 · B1 bowling'), findsOneWidget);
         // tap the second ball (the four)
         await _tap(tester, find.textContaining('FOUR!'));
-        expect(find.text('Edit ball — over 1'), findsOneWidget);
+        expect(find.textContaining('Edit ball — Over 1 · Ball'), findsOneWidget);
         if (size.height < 700) {
           // On a small phone the editor scrolls; here we only check it lays out cleanly.
           expect(tester.takeException(), isNull);
@@ -200,6 +204,28 @@ void main() {
         final balls = await _balls(tester);
         expect(balls[1]['runs'], 1);
         expect(balls[2]['runs'], 2, reason: 'the ball after it keeps what the scorer entered');
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('one-tap actions say what happened and can be undone', (tester) async {
+        await _seed();
+        await _pumpScreen(tester, size: size);
+        await _startAndPickBowler(tester);
+        await _tap(tester, _key('1'));
+        await _tap(tester, find.text('Undo'));
+        expect(find.text('Undid: A1 takes 1 run off B1'), findsOneWidget);
+        expect(await _balls(tester), isEmpty);
+
+        await _tap(tester, find.text('B1')); // no balls again, so the bowler is asked for
+        await _tap(tester, _key('1'));
+        await _tap(tester, find.byIcon(Icons.more_vert));
+        await _tap(tester, find.text('Swap batters'));
+        await tester.pump(const Duration(milliseconds: 700)); // the earlier message slides out first
+        expect(find.text('Batters swapped ends'), findsOneWidget);
+        expect((await _balls(tester)).length, 2); // the ball and the swap
+        await tester.pumpAndSettle(const Duration(milliseconds: 100)); // message fully in
+        await _tap(tester, find.text('UNDO'));
+        expect((await _balls(tester)).length, 1);
         expect(tester.takeException(), isNull);
       });
 
@@ -227,6 +253,15 @@ void main() {
         expect(find.text('Match over'), findsOneWidget);
         expect(find.text('Reds won by 1 run'), findsOneWidget);
         await _tap(tester, find.text('Save result'));
+        // A summary asks first: what will be saved and what it affects.
+        expect(find.text('Save this result?'), findsOneWidget);
+        expect(find.textContaining('points table'), findsOneWidget);
+        // Cancel saves nothing.
+        await _tap(tester, find.text('Cancel'));
+        await tester.pump(const Duration(seconds: 1)); // let the dialog finish closing
+        expect((await _match(tester))['status'], isNot('completed'));
+        await _tap(tester, find.text('Save result'));
+        await _tap(tester, find.widgetWithText(FilledButton, 'Save result').last);
         expect(find.text('Result saved'), findsOneWidget);
         var m = await _match(tester);
         expect(m['status'], 'completed');
@@ -281,7 +316,7 @@ void main() {
         await _startAndPickBowler(tester);
         await _tap(tester, _key('1'));
         await _tap(tester, find.byTooltip('All balls — edit'));
-        await _tap(tester, find.textContaining('1 run').first);
+        await _tap(tester, find.textContaining('takes 1 run').first);
         if (size.height < 700) return;
         await _tapInSheet(tester, find.widgetWithText(ChoiceChip, 'Six'));
         await _tapInSheet(tester, find.text('Save ball'));
@@ -304,6 +339,8 @@ void main() {
         await _tap(tester, find.byTooltip('All balls — edit'));
         expect(find.textContaining('bowler changed part-way'), findsOneWidget);
         await _tap(tester, find.text('Accept all'));
+        expect(find.textContaining('as they are?'), findsOneWidget);
+        await _tap(tester, find.widgetWithText(FilledButton, 'Accept all'));
         expect(find.textContaining('to review'), findsNothing);
         expect((await _balls(tester)).last['acknowledgedFlags'], ['bowlerChangedMidOver']);
         expect(tester.takeException(), isNull);
@@ -318,7 +355,7 @@ void main() {
         await _tap(tester, find.text('Save wicket'));
         await _tap(tester, find.byTooltip('All balls — edit'));
         await _tap(tester, find.textContaining('is bowled'));
-        expect(find.text('Edit ball — over 1'), findsOneWidget);
+        expect(find.textContaining('Edit ball — Over 1 · Ball'), findsOneWidget);
         if (size.height >= 700) {
           await tester.scrollUntilVisible(find.text('A batter is out on this ball'), 150,
               scrollable: find.byType(Scrollable).last);

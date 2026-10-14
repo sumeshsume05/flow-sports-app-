@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../core/constants.dart';
 import '../core/design/app_colors.dart';
 import '../core/design/app_radius.dart';
 import '../core/design/app_spacing.dart';
 import '../core/utils/relative_time.dart';
 import '../models/match.dart';
+import 'cricket_score_block.dart';
 import 'reaction_bar.dart';
 import 'status_badge.dart';
 
@@ -85,7 +87,9 @@ class MatchCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                if (match.status == MatchStatus.live) ...[
+                if (match.sport == Sport.cricket)
+                  CricketScoreBlock(match: match)
+                else if (match.status == MatchStatus.live) ...[
                   _LiveScoreboard(
                     teamAName: aName,
                     teamBName: bName,
