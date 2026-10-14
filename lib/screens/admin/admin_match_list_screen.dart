@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/design/app_spacing.dart';
+import '../../core/utils/delete_warning.dart';
 import '../../core/utils/match_grouping.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/match_card.dart';
 import '../../widgets/match_section_header.dart';
 import '../../widgets/shimmer_loading.dart';
@@ -19,39 +21,16 @@ class AdminMatchListScreen extends StatelessWidget {
 
   AdminMatchListScreen({super.key, required this.sport, required this.category, required this.season});
 
-  /// What deleting this particular match would change, so the admin isn't
-  /// surprised: a played league match alters the standings, and a knockout
-  /// match is part of the bracket.
-  static String _deleteWarning(Match match) {
-    final base = 'Remove ${match.label}? This cannot be undone.';
-    if (match.stage == MatchStage.knockout) {
-      return '$base\n\nThis match is part of the knockout bracket — deleting it leaves the bracket '
-          'incomplete. Use Generate Bracket if you need to start the knockout over.';
-    }
-    if (match.hasFinalResult &&
-        (match.stage == MatchStage.league || match.stage == MatchStage.tiebreaker)) {
-      return '$base\n\nIt has a result, so deleting it changes the standings.';
-    }
-    return base;
-  }
-
   Future<void> _confirmDelete(BuildContext context, Match match) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete match?'),
-        content: Text(_deleteWarning(match)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmAction(
+      context,
+      title: 'Delete ${match.label}?',
+      message: '${match.teamA.name ?? 'TBD'} vs ${match.teamB.name ?? 'TBD'}. This cannot be undone.',
+      bullets: deleteMatchConsequences(match),
+      confirmLabel: 'Delete',
+      danger: true,
     );
-    if (confirmed == true) {
+    if (confirmed) {
       try {
         await _firestoreService.deleteMatch(match.id);
       } catch (e) {

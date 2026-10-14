@@ -16,6 +16,20 @@ class ConnectivityState extends ChangeNotifier {
     Connectivity().checkConnectivity().then(_onChanged);
   }
 
+  /// A state with a fixed answer and no platform listener, for tests.
+  @visibleForTesting
+  ConnectivityState.fixed({bool offline = false}) {
+    isOffline = offline;
+  }
+
+  /// Flips the answer by hand, for tests.
+  @visibleForTesting
+  void setOffline(bool value) {
+    if (value == isOffline) return;
+    isOffline = value;
+    notifyListeners();
+  }
+
   void _onChanged(List<ConnectivityResult> results) {
     final offline = results.isEmpty || results.every((r) => r == ConnectivityResult.none);
     if (offline != isOffline) {

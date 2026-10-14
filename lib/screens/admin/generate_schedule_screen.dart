@@ -10,6 +10,8 @@ import '../../core/design/app_spacing.dart';
 import '../../core/utils/round_robin.dart';
 import '../../models/team.dart';
 import '../../services/firestore_service.dart';
+import '../../widgets/online_guard.dart';
+import '../../widgets/confirm_dialog.dart';
 
 class GenerateScheduleScreen extends StatefulWidget {
   final String sport;
@@ -42,6 +44,7 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
   }
 
   Future<void> _generate(List<Team> teams, List<String>? sections) async {
+    if (!requireOnline(context, 'Generating the schedule')) return;
     setState(() {
       _generating = true;
       _message = null;
@@ -75,6 +78,16 @@ class _GenerateScheduleScreenState extends State<GenerateScheduleScreen> {
               category: widget.category,
               season: widget.season,
             );
+      if (!mounted) return;
+      final ok = await confirmAction(
+        context,
+        title: 'Create ${matches.length} league matches?',
+        message: '${teams.length} teams${sections == null ? ' play each other once' : ' in ${sections.length} sections play each other once inside their section'}. '
+            'The matches appear for viewers straight away. To undo it you would have to delete them one by one '
+            'in Admin > Matches.',
+        confirmLabel: 'Create matches',
+      );
+      if (!ok) return;
       await _firestoreService.addMatchesBatch(matches);
 
       setState(() => _message = 'Generated ${matches.length} league matches. Good luck out there!');

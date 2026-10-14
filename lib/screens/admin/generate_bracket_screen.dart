@@ -12,6 +12,7 @@ import '../../models/match.dart';
 import '../../models/standing_row.dart';
 import '../../models/team.dart';
 import '../../services/firestore_service.dart';
+import '../../widgets/online_guard.dart';
 
 /// One qualification group feeding the knockout bracket: either the whole
 /// category (non-sectioned — [label] is null, [qualifyCount] is whatever
@@ -239,6 +240,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
   }
 
   Future<void> _scheduleTiebreaker(int panelIndex, List<StandingRow> group, int round) async {
+    if (!requireOnline(context, 'Scheduling a tie-breaker')) return;
     setState(() => _schedulingIndexes.add(panelIndex));
     try {
       final section = _panels![panelIndex].section;
@@ -269,6 +271,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
   /// KOF1 (teamA/teamB are identical across the whole series by
   /// construction — see bracket_resolver.dart's _finalGames).
   Future<void> _scheduleFinalGame3() async {
+    if (!requireOnline(context, 'Scheduling the decider')) return;
     final kof1 = _byCode('KOF1');
     if (kof1 == null) return;
     setState(() => _schedulingGame3 = true);
@@ -300,6 +303,7 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
   String _panelPrefix(_SectionPanel panel) => panel.label == null ? '' : 'Section ${panel.label}: ';
 
   Future<void> _generate() async {
+    if (!requireOnline(context, 'Generating the bracket')) return;
     if (_generating) return;
     final panels = _panels;
     if (panels == null) return;

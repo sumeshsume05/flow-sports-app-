@@ -12,6 +12,7 @@ import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../core/sports.dart';
 import '../../core/utils/match_export.dart';
+import '../../core/utils/reset_summary.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
 import '../../state/announcement_state.dart';
@@ -19,6 +20,8 @@ import '../../state/auth_state.dart';
 import '../../state/chat_settings_state.dart';
 import '../../state/enabled_sports_state.dart';
 import '../../state/season_state.dart';
+import '../../widgets/online_guard.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../models/team.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -153,31 +156,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _confirmReset(String sport, String season) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Reset $sport?'),
-        content: const Text(
-          'Deletes every match and result for this sport this season — league, '
-          'knockout and any tie-breakers. Teams are kept. This cannot be undone.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Reset'),
-          ),
-        ],
-      ),
+    final label = sportConfig(sport).label;
+    if (!requireOnline(context, 'Resetting $label')) return;
+    setState(() => _busySport = sport);
+    final ResetSummary summary;
+    try {
+      summary = summarizeReset(await _firestoreService.fetchSportMatches(sport: sport, season: season));
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busySport = null);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not check the matches: $e')));
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _busySport = null);
+    if (summary.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('There are no $label matches to reset.')));
+      return;
+    }
+    final confirmed = await confirmAction(
+      context,
+      title: 'Reset all $label matches?',
+      message: 'This deletes every $label match and result for this season, in every category '
+          '(league, knockout and tie-breakers, with their scores, balls and commentary). '
+          'Teams are kept. It cannot be undone.',
+      bullets: [for (final l in summary.lines) l.text],
+      confirmLabel: 'Reset $label',
+      typeToConfirm: 'RESET',
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     setState(() => _busySport = sport);
     try {
       await _firestoreService.resetSportMatches(sport: sport, season: season);
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('$sport matches reset — teams kept.')));
+            .showSnackBar(SnackBar(content: Text('$label matches reset — teams kept.')));
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
@@ -187,6 +201,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _setChatEnabled(bool enabled) async {
+    final ok = await confirmAction(
+      context,
+      title: enabled ? 'Open the chat?' : 'Close the chat?',
+      message: enabled
+          ? 'Everyone with the app will be able to read and post messages straight away.'
+          : 'The chat disappears for every viewer and nobody can post. Messages are kept and come back '
+              'when you open it again.',
+      confirmLabel: enabled ? 'Open chat' : 'Close chat',
+    );
+    if (!ok) return;
     try {
       await _firestoreService.setChatEnabled(enabled);
     } catch (e) {
@@ -223,6 +247,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _setSportEnabled(String sport, bool enabled) async {
+    final label = sportConfig(sport).label;
+    final ok = await confirmAction(
+      context,
+      title: enabled ? 'Show $label to everyone?' : 'Hide $label from viewers?',
+      message: enabled
+          ? 'Every viewer sees $label on their Home screen straight away, with all its teams, '
+              'matches and scores as they are right now.'
+          : 'Viewers lose $label — its matches, scores and tables — until you switch it back on. '
+              'Nothing is deleted, and you still see it here.',
+      confirmLabel: enabled ? 'Show $label' : 'Hide $label',
+    );
+    if (!ok) return;
     try {
       await _firestoreService.setSportEnabled(sport, enabled);
     } catch (e) {

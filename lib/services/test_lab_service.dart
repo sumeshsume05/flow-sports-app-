@@ -24,9 +24,17 @@ class TestLabService {
   final FirebaseFirestore _db;
   final FirestoreService _firestoreService;
 
-  TestLabService({FirebaseFirestore? firestore, FirestoreService? firestoreService})
-      : _db = firestore ?? FirebaseFirestore.instance,
-        _firestoreService = firestoreService ?? FirestoreService(firestore: firestore);
+  TestLabService({
+    FirebaseFirestore? firestore,
+    FirestoreService? firestoreService,
+    Future<int> Function(Query<Map<String, dynamic>> query)? serverCount,
+    this.serverCountTimeout = const Duration(seconds: 4),
+  })  : _db = firestore ?? FirebaseFirestore.instance,
+        _firestoreService = firestoreService ?? FirestoreService(firestore: firestore),
+        _serverCount = serverCount ?? _defaultServerCount;
+
+  static Future<int> _defaultServerCount(Query<Map<String, dynamic>> query) async =>
+      (await query.count().get()).count ?? 0;
 
   Query<Map<String, dynamic>> _teams(String sport, String season) => _db
       .collection(teamsCollection)
@@ -40,12 +48,38 @@ class TestLabService {
       .where('category', isEqualTo: Category.test)
       .where('season', isEqualTo: season);
 
-  /// How much test data currently exists for [sport].
-  Future<({int teams, int matches})> counts(String sport, String season) async {
-    final t = await _teams(sport, season).count().get();
-    final m = await _matches(sport, season).count().get();
-    return (teams: t.count ?? 0, matches: m.count ?? 0);
+  /// How much test data currently exists for [sport], and whether the numbers
+  /// are only the saved copy on this phone ([fromCache]).
+  ///
+  /// The cheap server-side count is tried first. It needs the server, so with
+  /// no signal it never answers — and showing "0 teams" then would make the
+  /// Test Lab look empty (offering "Create test teams" over data that is
+  /// really there). So when it can't answer in a few seconds, the saved copy of
+  /// the same queries is counted instead. If even that fails, this throws and
+  /// the screen says it can't tell. [offline] (the phone knows it has no network)
+  /// skips the wait.
+  Future<({int teams, int matches, bool fromCache})> counts(
+    String sport,
+    String season, {
+    bool offline = false,
+  }) async {
+    try {
+      if (offline) throw StateError('offline'); // skip the wait, go straight to the saved copy
+      final t = await _serverCount(_teams(sport, season)).timeout(serverCountTimeout);
+      final m = await _serverCount(_matches(sport, season)).timeout(serverCountTimeout);
+      return (teams: t, matches: m, fromCache: false);
+    } catch (_) {
+      final t = await _teams(sport, season).get(const GetOptions(source: Source.cache));
+      final m = await _matches(sport, season).get(const GetOptions(source: Source.cache));
+      return (teams: t.size, matches: m.size, fromCache: true);
+    }
   }
+
+  /// How long to wait for the server's answer before counting the saved copy.
+  final Duration serverCountTimeout;
+
+  /// The server-side count; tests replace it to simulate having no signal.
+  final Future<int> Function(Query<Map<String, dynamic>> query) _serverCount;
 
   Future<void> _deleteRefs(List<DocumentReference> refs) async {
     for (var i = 0; i < refs.length; i += 400) {

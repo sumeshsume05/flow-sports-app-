@@ -7,6 +7,8 @@ import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../models/team.dart';
 import '../../services/firestore_service.dart';
+import '../../widgets/online_guard.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/shimmer_loading.dart';
 
 class AdminTeamsScreen extends StatefulWidget {
@@ -142,6 +144,21 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
   Future<void> _autoArrangeDialog(List<Team> teams) async {
     if (await _sectionsLocked()) return;
     const letters = ['A', 'B'];
+    if (!mounted) return;
+    final already = teams.where((t) => t.section != null).length;
+    final ok = await confirmAction(
+      context,
+      title: 'Arrange teams into 2 sections?',
+      message: already > 0
+          ? 'This replaces the sections you set before. Teams are shared out one by one:'
+          : 'Teams are shared out one by one:',
+      bullets: [
+        for (final l in letters)
+          'Section $l: ${[for (var i = 0; i < teams.length; i++) if (letters[i % letters.length] == l) teams[i].name].join(', ')}',
+      ],
+      confirmLabel: 'Arrange',
+    );
+    if (!ok) return;
     try {
       await Future.wait([
         for (var i = 0; i < teams.length; i++)
@@ -195,7 +212,17 @@ class _AdminTeamsScreenState extends State<AdminTeamsScreen> {
     // A team that already has matches can't be deleted: its opponents' results
     // against it would silently vanish from the standings, and its unplayed
     // matches would be left pointing at a team that no longer exists.
-    final matchCount = await _firestoreService.countMatchesForTeam(team.id);
+    if (!requireOnline(context, 'Deleting a team')) return;
+    final int matchCount;
+    try {
+      matchCount = await _firestoreService.countMatchesForTeam(team.id);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Couldn't check whether this team has matches, so it was not deleted. Try again.")));
+      }
+      return;
+    }
     if (matchCount > 0) {
       if (!mounted) return;
       await showDialog<void>(

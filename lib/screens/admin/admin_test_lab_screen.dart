@@ -9,6 +9,7 @@ import '../../core/design/app_spacing.dart';
 import '../../core/sports.dart';
 import '../../core/test_lab/test_scenarios.dart';
 import '../../services/test_lab_service.dart';
+import '../../state/connectivity_state.dart';
 import '../../state/season_state.dart';
 
 /// Admin Test Lab: ready-made test teams (and cricket players) for every
@@ -16,7 +17,10 @@ import '../../state/season_state.dart';
 /// one-tap reset so a test can be repeated from a clean slate. Test data runs
 /// through exactly the same screens and logic as real data.
 class AdminTestLabScreen extends StatelessWidget {
-  const AdminTestLabScreen({super.key});
+  /// Tests pass one backed by a fake Firestore.
+  final TestLabService? service;
+
+  const AdminTestLabScreen({super.key, this.service});
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +54,7 @@ class AdminTestLabScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: AppSpacing.md),
-                for (final sport in Sport.all) _SportLab(sport: sport, season: season),
+                for (final sport in Sport.all) _SportLab(sport: sport, season: season, service: service),
               ],
             ),
     );
@@ -60,27 +64,48 @@ class AdminTestLabScreen extends StatelessWidget {
 class _SportLab extends StatefulWidget {
   final String sport;
   final String season;
+  final TestLabService? service;
 
-  const _SportLab({required this.sport, required this.season});
+  const _SportLab({required this.sport, required this.season, this.service});
 
   @override
   State<_SportLab> createState() => _SportLabState();
 }
 
 class _SportLabState extends State<_SportLab> {
-  final _service = TestLabService();
+  late final _service = widget.service ?? TestLabService();
   late final _scenarios = testScenariosFor(widget.sport);
   late TestScenario _scenario = _scenarios.first;
-  late Future<({int teams, int matches})> _counts = _service.counts(widget.sport, widget.season);
+  late Future<({int teams, int matches, bool fromCache})> _counts = _loadCounts();
   bool _busy = false;
+  bool? _wasOffline;
   String? _message;
+
+  bool get _offline => Provider.of<ConnectivityState?>(context, listen: false)?.isOffline ?? false;
+
+  Future<({int teams, int matches, bool fromCache})> _loadCounts() =>
+      _service.counts(widget.sport, widget.season, offline: _offline);
 
   void _refresh() {
     // Start the query first; setState's callback must not be async or return a Future.
-    final next = _service.counts(widget.sport, widget.season);
+    final next = _loadCounts();
     setState(() {
       _counts = next;
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // When the network comes back (or goes away) re-read the numbers, so the
+    // card never keeps showing a saved copy after the phone is online again.
+    final offline = context.watch<ConnectivityState?>()?.isOffline ?? false;
+    if (_wasOffline != null && _wasOffline != offline) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _refresh();
+      });
+    }
+    _wasOffline = offline;
   }
 
   /// Opens another admin screen and, when the admin comes back, re-reads the
@@ -130,7 +155,7 @@ class _SportLabState extends State<_SportLab> {
     return ok == true;
   }
 
-  Future<void> _create(({int teams, int matches}) existing) async {
+  Future<void> _create(({int teams, int matches, bool fromCache}) existing) async {
     if (existing.teams + existing.matches > 0) {
       final ok = await _confirm(
         'Replace test data?',
@@ -147,7 +172,7 @@ class _SportLabState extends State<_SportLab> {
     });
   }
 
-  Future<void> _reset(({int teams, int matches}) existing) async {
+  Future<void> _reset(({int teams, int matches, bool fromCache}) existing) async {
     final ok = await _confirm(
       'Reset ${sportConfig(widget.sport).label} test data?',
       'Deletes all ${existing.teams} test teams and ${existing.matches} test matches. '
@@ -172,11 +197,15 @@ class _SportLabState extends State<_SportLab> {
       margin: const EdgeInsets.only(bottom: AppSpacing.md),
       child: Padding(
         padding: const EdgeInsets.all(AppSpacing.md),
-        child: FutureBuilder<({int teams, int matches})>(
+        child: FutureBuilder<({int teams, int matches, bool fromCache})>(
           future: _counts,
           builder: (context, snapshot) {
-            final counts = snapshot.data ?? (teams: 0, matches: 0);
+            final counts = snapshot.data ?? (teams: 0, matches: 0, fromCache: false);
             final hasData = counts.teams + counts.matches > 0;
+            // Changing test data (create / replace / play / reset) needs the
+            // real numbers and a connection: those writes wait for the server.
+            final canChange = snapshot.hasData && !counts.fromCache && !_offline;
+            final locked = _busy || !canChange;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -186,7 +215,11 @@ class _SportLabState extends State<_SportLab> {
                     const SizedBox(width: AppSpacing.sm),
                     Expanded(child: Text(config.label, style: textTheme.titleLarge)),
                     Text(
-                      snapshot.hasData ? '${counts.teams} teams · ${counts.matches} matches' : '…',
+                      snapshot.hasData
+                          ? '${counts.teams} teams · ${counts.matches} matches'
+                          : snapshot.hasError
+                              ? '?'
+                              : '…',
                       style: textTheme.bodySmall,
                     ),
                     IconButton(
@@ -196,6 +229,18 @@ class _SportLabState extends State<_SportLab> {
                     ),
                   ],
                 ),
+                if (snapshot.hasData && (counts.fromCache || _offline))
+                  _Note(
+                    icon: Icons.cloud_off_rounded,
+                    text: 'You are offline — this is the copy saved on your phone. Creating, playing and '
+                        'resetting test data are paused until the network is back.',
+                  )
+                else if (snapshot.hasError)
+                  _Note(
+                    icon: Icons.error_outline,
+                    text: 'Could not read the test data (no saved copy yet, and no connection). '
+                        'Try again when you are online.',
+                  ),
                 const SizedBox(height: AppSpacing.sm),
                 DropdownButtonFormField<TestScenario>(
                   initialValue: _scenario,
@@ -211,7 +256,7 @@ class _SportLabState extends State<_SportLab> {
                 FilledButton.icon(
                   icon: const Icon(Icons.group_add_outlined),
                   label: Text(hasData ? 'Replace with this scenario' : 'Create test teams'),
-                  onPressed: _busy ? null : () => _create(counts),
+                  onPressed: locked ? null : () => _create(counts),
                 ),
                 if (hasData) ...[
                   const SizedBox(height: AppSpacing.md),
@@ -281,7 +326,7 @@ class _SportLabState extends State<_SportLab> {
                     runSpacing: AppSpacing.sm,
                     children: [
                       OutlinedButton(
-                        onPressed: _busy
+                        onPressed: locked
                             ? null
                             : () => _run('Playing league…', () async {
                                   final n = await _service.playLeague(widget.sport, widget.season,
@@ -294,7 +339,7 @@ class _SportLabState extends State<_SportLab> {
                         child: const Text('Play league (random)'),
                       ),
                       OutlinedButton(
-                        onPressed: _busy
+                        onPressed: locked
                             ? null
                             : () => _run('Playing league…', () async {
                                   final n = await _service.playLeague(widget.sport, widget.season,
@@ -307,7 +352,7 @@ class _SportLabState extends State<_SportLab> {
                         child: const Text('Play league (all ties)'),
                       ),
                       OutlinedButton(
-                        onPressed: _busy
+                        onPressed: locked
                             ? null
                             : () => _run('Playing tie-breakers…', () async {
                                   final n = await _service.playTiebreakers(widget.sport, widget.season,
@@ -320,7 +365,7 @@ class _SportLabState extends State<_SportLab> {
                         child: const Text('Play tie-breakers (random)'),
                       ),
                       OutlinedButton(
-                        onPressed: _busy
+                        onPressed: locked
                             ? null
                             : () => _run('Playing tie-breakers…', () async {
                                   final n = await _service.playTiebreakers(widget.sport, widget.season,
@@ -333,7 +378,7 @@ class _SportLabState extends State<_SportLab> {
                         child: const Text('Play tie-breakers (all ties)'),
                       ),
                       OutlinedButton(
-                        onPressed: _busy
+                        onPressed: locked
                             ? null
                             : () => _run('Playing knockout…', () async {
                                   final r = await _service.playKnockout(widget.sport, widget.season);
@@ -361,7 +406,7 @@ class _SportLabState extends State<_SportLab> {
                     runSpacing: AppSpacing.sm,
                     children: [
                       OutlinedButton(
-                        onPressed: _busy
+                        onPressed: locked
                             ? null
                             : () => _run('Playing league…', () async {
                                   final r = await _service.playCricketStage(widget.sport, widget.season,
@@ -373,7 +418,7 @@ class _SportLabState extends State<_SportLab> {
                         child: const Text('Play league (random)'),
                       ),
                       OutlinedButton(
-                        onPressed: _busy
+                        onPressed: locked
                             ? null
                             : () => _run('Playing knockout…', () async {
                                   final r = await _service.playCricketKnockout(widget.sport, widget.season);
@@ -391,7 +436,7 @@ class _SportLabState extends State<_SportLab> {
                     style: OutlinedButton.styleFrom(foregroundColor: AppColors.liveRed),
                     icon: const Icon(Icons.restart_alt_rounded),
                     label: const Text('Reset test data'),
-                    onPressed: _busy ? null : () => _reset(counts),
+                    onPressed: locked ? null : () => _reset(counts),
                   ),
                 ],
                 if (_message != null)
@@ -420,6 +465,34 @@ class _SportLabState extends State<_SportLab> {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _Note extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _Note({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: AppSpacing.xs),
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppColors.warningAmber.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.warningAmber),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(child: Text(text, style: Theme.of(context).textTheme.bodySmall)),
+        ],
       ),
     );
   }
