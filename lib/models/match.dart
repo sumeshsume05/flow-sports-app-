@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/cricket/cricket_rules.dart';
+import '../core/cricket/match_scoring.dart';
 import '../core/cricket/cricket_toss.dart';
 
 /// [friendly] matches are practice/exhibition games: shown in match lists but
@@ -150,6 +151,15 @@ class Match {
   final List<String> lineupB;
   final CricketToss? toss;
 
+  /// Cricket only, written by live scoring. [innings] holds each innings'
+  /// openers plus a cached copy of its totals; [summaryText] is the one-line
+  /// state for lists ("Team A 45/2 (4.3 ov)"); [live] is who is batting and
+  /// bowling right now; [resultText] is "Team B won by 3 wickets".
+  final List<InningsRecord> innings;
+  final String? summaryText;
+  final Map<String, dynamic>? live;
+  final String? resultText;
+
   Match({
     required this.id,
     required this.sport,
@@ -182,6 +192,10 @@ class Match {
     this.lineupA = const [],
     this.lineupB = const [],
     this.toss,
+    this.innings = const [],
+    this.summaryText,
+    this.live,
+    this.resultText,
   });
 
   factory Match.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -222,6 +236,13 @@ class Match {
       toss: data['toss'] is Map
           ? CricketToss.fromMap(Map<String, dynamic>.from(data['toss'] as Map))
           : null,
+      innings: [
+        for (final i in (data['innings'] as List?) ?? const [])
+          if (i is Map) InningsRecord.fromMap(Map<String, dynamic>.from(i)),
+      ],
+      summaryText: data['summaryText'] as String?,
+      live: data['live'] is Map ? Map<String, dynamic>.from(data['live'] as Map) : null,
+      resultText: data['resultText'] as String?,
     );
   }
 
@@ -287,6 +308,10 @@ class Match {
         lineupA: lineupA,
         lineupB: lineupB,
         toss: toss,
+        innings: innings,
+        summaryText: summaryText,
+        live: live,
+        resultText: resultText,
       );
 
   /// A match counts as played only when it is both marked completed *and*

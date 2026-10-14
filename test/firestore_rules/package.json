@@ -1,0 +1,9 @@
+{
+  "name": "flow-arena-rules-tests",
+  "private": true,
+  "description": "Checks firestore.rules against the local Firestore emulator (never the real project).",
+  "dependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase": "^12.0.0"
+  }
+}
