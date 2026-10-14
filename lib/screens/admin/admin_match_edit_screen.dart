@@ -8,23 +8,28 @@ import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../core/utils/bracket_resolver.dart';
+import '../../core/utils/match_action_text.dart';
 import '../../models/commentary_entry.dart';
 import '../../models/match.dart';
 import '../../services/firestore_service.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/score_input_field.dart';
 import '../../widgets/status_badge.dart';
 
 class AdminMatchEditScreen extends StatefulWidget {
   final String matchId;
 
-  const AdminMatchEditScreen({super.key, required this.matchId});
+  /// Tests pass one backed by a fake Firestore.
+  final FirestoreService? service;
+
+  const AdminMatchEditScreen({super.key, required this.matchId, this.service});
 
   @override
   State<AdminMatchEditScreen> createState() => _AdminMatchEditScreenState();
 }
 
 class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
-  final _firestoreService = FirestoreService();
+  late final _firestoreService = widget.service ?? FirestoreService();
   late final _matchStream = _firestoreService.watchMatchWithSyncStatus(widget.matchId);
   final _scoreAController = TextEditingController();
   final _scoreBController = TextEditingController();
@@ -34,8 +39,7 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
   bool _initialized = false;
   bool _saving = false;
   bool _postingCommentary = false;
-  bool _adjustingLiveScoreA = false;
-  bool _adjustingLiveScoreB = false;
+  ({String team, int delta})? _lastTap;
   String? _error;
 
   @override
@@ -167,33 +171,50 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
   /// — without touching `_initFields`'s one-time-init guard, so an admin
   /// mid-edit of those fields elsewhere never gets silently overwritten
   /// except by their own live-score tap.
-  Future<void> _adjustLiveScore(String team, int delta) async {
+  /// One tap of the live-score buttons. The score on screen changes at once
+  /// and the write is queued by Firestore, so it works with no signal.
+  void _adjustLiveScore(Match match, String team, int delta, {bool isUndo = false}) {
+    final r = _firestoreService.adjustLiveScore(
+      widget.matchId,
+      team: team,
+      delta: delta,
+      currentA: int.tryParse(_scoreAController.text) ?? 0,
+      currentB: int.tryParse(_scoreBController.text) ?? 0,
+    );
     setState(() {
-      if (team == 'A') {
-        _adjustingLiveScoreA = true;
-      } else {
-        _adjustingLiveScoreB = true;
-      }
       _error = null;
+      _scoreAController.text = r.scoreA.toString();
+      _scoreBController.text = r.scoreB.toString();
+      _lastTap = isUndo ? null : (team: team, delta: delta);
     });
-    try {
-      final (scoreA, scoreB) =
-          await _firestoreService.incrementLiveScore(widget.matchId, team: team, delta: delta);
-      _scoreAController.text = scoreA.toString();
-      _scoreBController.text = scoreB.toString();
-    } on FirestoreWriteException catch (e) {
-      if (mounted) setState(() => _error = e.message);
-    } finally {
+    r.saved.catchError((Object e) {
       if (mounted) {
-        setState(() {
-          if (team == 'A') {
-            _adjustingLiveScoreA = false;
-          } else {
-            _adjustingLiveScoreB = false;
-          }
-        });
+        setState(() => _error = e is FirestoreWriteException ? e.message : '$e');
       }
-    }
+    });
+  }
+
+  /// Takes the last tap back with the opposite tap (the point log gets a
+  /// correcting entry — it is never edited).
+  void _undoLastTap(Match match) {
+    final last = _lastTap;
+    if (last == null) return;
+    _adjustLiveScore(match, last.team, -last.delta, isUndo: true);
+  }
+
+  /// Start Match / Reset to Upcoming, after saying what it will do.
+  Future<void> _changeStatus(MatchStatus target, Match match) async {
+    final text = statusChangeText(match, target);
+    if (text == null) return;
+    final ok = await confirmAction(
+      context,
+      title: text.title,
+      message: text.message,
+      bullets: text.bullets,
+      confirmLabel: text.confirmLabel,
+      danger: target == MatchStatus.upcoming && match.status == MatchStatus.completed,
+    );
+    if (ok) await _setStatus(target, match);
   }
 
   Future<void> _postCommentary() async {
@@ -243,6 +264,7 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
       final result = Match.computeResult(scoreA, scoreB)!;
 
       var slotWrites = <SlotWrite>[];
+      var advances = <String>[];
       if (match.stage == MatchStage.knockout) {
         final otherKnockout = await _firestoreService.fetchMatches(
           sport: match.sport,
@@ -270,6 +292,7 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
         final others = otherKnockout.where((m) => m.id != match.id).toList();
         final dependentUpdates = resolveDependentSlots(completed: completed, otherKnockoutMatches: others);
         slotWrites = dependentSlotWrites(completed: completed, otherKnockoutMatches: others);
+        advances = [for (final m in dependentUpdates) m.label];
 
         // Correcting a result so the *winner changes* would swap the teams of a
         // later match that has already been started or played, leaving its
@@ -287,6 +310,15 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
           return;
         }
       }
+
+      if (!mounted) return;
+      final ok = await confirmAction(
+        context,
+        title: 'Save this result?',
+        bullets: resultSummaryLines(match: match, scoreA: scoreA, scoreB: scoreB, advances: advances),
+        confirmLabel: 'Save result',
+      );
+      if (!ok) return;
 
       await _firestoreService.saveResultAndResolveSlots(
         matchId: match.id,
@@ -347,14 +379,14 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
                     label: const Text('Start Match'),
                     onPressed: _saving || match.status == MatchStatus.live
                         ? null
-                        : () => _setStatus(MatchStatus.live, match),
+                        : () => _changeStatus(MatchStatus.live, match),
                   ),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.restart_alt_rounded),
                     label: const Text('Reset to Upcoming'),
                     onPressed: _saving || match.status == MatchStatus.upcoming
                         ? null
-                        : () => _setStatus(MatchStatus.upcoming, match),
+                        : () => _changeStatus(MatchStatus.upcoming, match),
                   ),
                 ],
               ),
@@ -365,10 +397,13 @@ class _AdminMatchEditScreenState extends State<AdminMatchEditScreen> {
                   teamBName: match.teamB.name ?? 'TBD',
                   scoreA: int.tryParse(_scoreAController.text) ?? 0,
                   scoreB: int.tryParse(_scoreBController.text) ?? 0,
-                  adjustingA: _adjustingLiveScoreA,
-                  adjustingB: _adjustingLiveScoreB,
-                  onAdjustA: (delta) => _adjustLiveScore('A', delta),
-                  onAdjustB: (delta) => _adjustLiveScore('B', delta),
+                  onAdjustA: (delta) => _adjustLiveScore(match, 'A', delta),
+                  onAdjustB: (delta) => _adjustLiveScore(match, 'B', delta),
+                  lastTapText: _lastTap == null
+                      ? null
+                      : '${(_lastTap!.team == 'A' ? match.teamA.name : match.teamB.name) ?? 'Team'} '
+                          '${_lastTap!.delta > 0 ? '+' : '−'}1',
+                  onUndo: () => _undoLastTap(match),
                 ),
                 const SizedBox(height: AppSpacing.lg),
               ],
@@ -544,20 +579,22 @@ class _LiveScoreCard extends StatelessWidget {
   final String teamBName;
   final int scoreA;
   final int scoreB;
-  final bool adjustingA;
-  final bool adjustingB;
   final void Function(int delta) onAdjustA;
   final void Function(int delta) onAdjustB;
+
+  /// "Reds +1" — the tap Undo would take back; null when there is none.
+  final String? lastTapText;
+  final VoidCallback onUndo;
 
   const _LiveScoreCard({
     required this.teamAName,
     required this.teamBName,
     required this.scoreA,
     required this.scoreB,
-    required this.adjustingA,
-    required this.adjustingB,
     required this.onAdjustA,
     required this.onAdjustB,
+    required this.lastTapText,
+    required this.onUndo,
   });
 
   @override
@@ -582,7 +619,6 @@ class _LiveScoreCard extends StatelessWidget {
                 child: _LiveScoreTeamControl(
                   name: teamAName,
                   score: scoreA,
-                  adjusting: adjustingA,
                   onTapPlus: () => onAdjustA(1),
                   onTapMinus: scoreA > 0 ? () => onAdjustA(-1) : null,
                 ),
@@ -592,7 +628,6 @@ class _LiveScoreCard extends StatelessWidget {
                 child: _LiveScoreTeamControl(
                   name: teamBName,
                   score: scoreB,
-                  adjusting: adjustingB,
                   onTapPlus: () => onAdjustB(1),
                   onTapMinus: scoreB > 0 ? () => onAdjustB(-1) : null,
                 ),
@@ -600,8 +635,17 @@ class _LiveScoreCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              icon: const Icon(Icons.undo),
+              label: Text(lastTapText == null ? 'Undo last tap' : 'Undo last tap ($lastTapText)'),
+              onPressed: lastTapText == null ? null : onUndo,
+            ),
+          ),
           Text(
-            'Tap + the moment a team wins a point. Tap − to undo a wrong tap for that team.',
+            'Tap + the moment a team wins a point. Works without signal — it syncs later. '
+            'Tap Undo, or − for that team, to take a wrong tap back.',
             style: textTheme.bodySmall,
           ),
         ],
@@ -613,14 +657,12 @@ class _LiveScoreCard extends StatelessWidget {
 class _LiveScoreTeamControl extends StatelessWidget {
   final String name;
   final int score;
-  final bool adjusting;
   final VoidCallback onTapPlus;
   final VoidCallback? onTapMinus;
 
   const _LiveScoreTeamControl({
     required this.name,
     required this.score,
-    required this.adjusting,
     required this.onTapPlus,
     required this.onTapMinus,
   });
@@ -637,7 +679,7 @@ class _LiveScoreTeamControl extends StatelessWidget {
           children: [
             IconButton.outlined(
               icon: const Icon(Icons.remove),
-              onPressed: adjusting ? null : onTapMinus,
+              onPressed: onTapMinus,
             ),
             SizedBox(
               width: 40,
@@ -649,7 +691,7 @@ class _LiveScoreTeamControl extends StatelessWidget {
             ),
             IconButton.filled(
               icon: const Icon(Icons.add),
-              onPressed: adjusting ? null : onTapPlus,
+              onPressed: onTapPlus,
             ),
           ],
         ),
