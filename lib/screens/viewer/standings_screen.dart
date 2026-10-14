@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/match_action_text.dart';
 import '../../core/utils/sections.dart';
 import '../../core/utils/standings_calculator.dart';
 import '../../models/match.dart';
@@ -12,13 +13,16 @@ class StandingsScreen extends StatelessWidget {
   final String sport;
   final String category;
   final String season;
-  final _firestoreService = FirestoreService();
+
+  /// Tests pass one backed by a fake Firestore.
+  final FirestoreService? service;
+  late final _firestoreService = service ?? FirestoreService();
   late final _teamsStream =
       _firestoreService.watchTeams(sport: sport, category: category, season: season);
   late final _matchesStream =
       _firestoreService.watchMatches(sport: sport, category: category, season: season);
 
-  StandingsScreen({super.key, required this.sport, required this.category, required this.season});
+  StandingsScreen({super.key, required this.sport, required this.category, required this.season, this.service});
 
   @override
   Widget build(BuildContext context) {
@@ -46,21 +50,28 @@ class StandingsScreen extends StatelessWidget {
               if (!sectioned) {
                 final List<StandingRow> standings =
                     computeStandings(teams: teams, leagueMatches: leagueMatches);
+                // How many teams go through: whatever the admin chose when the
+                // bracket was made (2, 3 or 4) — 4 until there is a bracket.
+                final qualifyCount = qualifierCountFromBracket(
+                    matchesSnap.data!.where((m) => m.stage == MatchStage.knockout).toList());
                 return Padding(
                   padding: const EdgeInsets.all(12),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (topFourHasAmbiguousTie(standings))
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 12),
+                      // No banner before a single match is played — everyone is
+                      // level at 0, which isn't a real tie.
+                      if (standings.any((r) => r.played > 0) &&
+                          topFourHasAmbiguousTie(standings, cutoffCount: qualifyCount))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
                           child: Text(
-                            'Some teams are tied on points around the top-4 cutoff. '
+                            'Some teams are tied on points around the top-$qualifyCount cutoff. '
                             'Seed order will need manual confirmation before generating the bracket.',
-                            style: TextStyle(color: Colors.orange),
+                            style: const TextStyle(color: Colors.orange),
                           ),
                         ),
-                      StandingsTable(rows: standings),
+                      StandingsTable(rows: standings, qualifyCount: qualifyCount),
                     ],
                   ),
                 );
@@ -83,7 +94,8 @@ class StandingsScreen extends StatelessWidget {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (topFourHasAmbiguousTie(sectionStandings, cutoffCount: 2))
+                          if (sectionStandings.any((r) => r.played > 0) &&
+                              topFourHasAmbiguousTie(sectionStandings, cutoffCount: 2))
                             const Padding(
                               padding: EdgeInsets.only(bottom: 12),
                               child: Text(

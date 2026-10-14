@@ -7,6 +7,7 @@ import '../core/cricket/match_rules_stamp.dart';
 import '../core/cricket/match_scoring.dart';
 import '../core/cricket/tournament_plan.dart';
 import '../core/utils/bracket_resolver.dart';
+import '../core/utils/live_score.dart';
 import '../core/utils/team_rename.dart';
 import '../models/chat_message.dart';
 import '../models/commentary_entry.dart';
@@ -749,41 +750,40 @@ class FirestoreService {
 
   // --- Live score (point log) ---
 
-  /// Atomically bumps [team]'s score by [delta] (+1 to record a point, -1 to
-  /// undo a wrong tap) and appends a [PointLogEntry] with the resultant
-  /// score, in one transaction — a transaction rather than a plain
-  /// increment-and-batch because the resultant score has to be *read* before
-  /// it can be logged, and because the result is clamped at 0 (so a stray
-  /// extra -1 tap can't go negative). Returns the resultant (scoreA, scoreB)
-  /// so the caller can keep its own final-score fields in sync without a
-  /// redundant read.
-  Future<(int scoreA, int scoreB)> incrementLiveScore(
+  /// Records one tap of the live-score control: [team]'s score changes by
+  /// [delta] (+1 for a point, -1 to take a wrong tap back) and a point-log
+  /// entry is appended — in one batch, so the two never disagree.
+  ///
+  /// Works with no signal: the new score is worked out here from
+  /// [currentA]/[currentB] and returned at once, and Firestore applies the
+  /// write locally and queues it (a transaction can't — it needs the server,
+  /// so the old tap failed on a weak connection). The match document is
+  /// changed with an increment, so two admins tapping at the same moment both
+  /// count. A −1 at 0 is ignored. [saved] completes when the server has the
+  /// write (or fails); the caller must not wait for it before updating its
+  /// display.
+  ({int scoreA, int scoreB, Future<void> saved}) adjustLiveScore(
     String matchId, {
     required String team, // 'A' or 'B'
     required int delta, // +1 or -1
-  }) async {
-    try {
-      final matchRef = _db.collection(matchesCollection).doc(matchId);
-      return await _db.runTransaction((tx) async {
-        final snap = await tx.get(matchRef);
-        var scoreA = (snap.data()?['scoreA'] as int?) ?? 0;
-        var scoreB = (snap.data()?['scoreB'] as int?) ?? 0;
-        if (team == 'A') {
-          scoreA = (scoreA + delta).clamp(0, 999);
-        } else {
-          scoreB = (scoreB + delta).clamp(0, 999);
-        }
-        tx.update(matchRef, {'scoreA': scoreA, 'scoreB': scoreB});
-        tx.set(
-          matchRef.collection(pointLogCollection).doc(),
-          PointLogEntry(id: '', team: team, scoreA: scoreA, scoreB: scoreB, createdAt: null)
-              .toFirestore(),
-        );
-        return (scoreA, scoreB);
-      });
-    } catch (e) {
+    required int currentA,
+    required int currentB,
+  }) {
+    final (nextA, nextB) = nextLiveScore(currentA, currentB, team: team, delta: delta);
+    final applied = team == 'A' ? nextA - currentA : nextB - currentB;
+    if (applied == 0) return (scoreA: currentA, scoreB: currentB, saved: Future<void>.value());
+
+    final matchRef = _db.collection(matchesCollection).doc(matchId);
+    final batch = _db.batch();
+    batch.update(matchRef, {team == 'A' ? 'scoreA' : 'scoreB': FieldValue.increment(applied)});
+    batch.set(
+      matchRef.collection(pointLogCollection).doc(),
+      PointLogEntry(id: '', team: team, scoreA: nextA, scoreB: nextB, createdAt: null).toFirestore(),
+    );
+    final saved = batch.commit().catchError((Object e) {
       throw FirestoreWriteException('Could not update the live score.', e);
-    }
+    });
+    return (scoreA: nextA, scoreB: nextB, saved: saved);
   }
 
   /// Chronological (oldest first) point-by-point log for one match — same
