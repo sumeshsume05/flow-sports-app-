@@ -120,6 +120,17 @@ class FirestoreService {
     return snap.docs.map(Match.fromFirestore).toList();
   }
 
+  /// Every match of a sport in a season, across all categories (what a sport
+  /// reset would delete).
+  Future<List<Match>> fetchSportMatches({required String sport, required String season}) async {
+    final snap = await _db
+        .collection(matchesCollection)
+        .where('sport', isEqualTo: sport)
+        .where('season', isEqualTo: season)
+        .get();
+    return snap.docs.map(Match.fromFirestore).toList();
+  }
+
   Stream<Team?> watchTeam(String teamId) {
     return _db
         .collection(teamsCollection)
