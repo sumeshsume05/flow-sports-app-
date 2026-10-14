@@ -286,7 +286,9 @@ void main() {
       expect(m['scoreB'], 0);
       expect((m['live'] as Map)['strikerId'], 'a2'); // single swapped the strike
       expect((m['live'] as Map)['bowlerId'], 'b1');
-      expect(m['lastCommentaryText'], contains('b1 to a1'));
+      expect(m['lastCommentaryText'], 'a1 takes 1 run off b1');
+      // who is at the crease and who bowls, for the match card (* = on strike)
+      expect(m['liveText'], 'a2 0* (0), a1 1 (1) · Bowling: b1 0.1-0-1-0');
       final innings = m['innings'] as List;
       expect((innings.single as Map)['runs'], 1);
       expect((innings.single as Map)['ended'], false);

@@ -398,18 +398,18 @@ void main() {
 
     test('boundaries, runs and dots', () {
       expect(ballCommentary(rec(const CricketEvent.bat(1, 'b1', 4, boundary: Boundary.four)), nameOf),
-          'Sam to Ravi, FOUR!');
+          'FOUR! Ravi hits Sam for 4');
       expect(ballCommentary(rec(const CricketEvent.bat(1, 'b1', 6, boundary: Boundary.six)), nameOf),
-          'Sam to Ravi, SIX!');
-      expect(ballCommentary(rec(const CricketEvent.bat(1, 'b1', 2)), nameOf), 'Sam to Ravi, 2 runs');
-      expect(ballCommentary(rec(const CricketEvent.bat(1, 'b1', 1)), nameOf), 'Sam to Ravi, 1 run');
-      expect(ballCommentary(rec(const CricketEvent.dot(1, 'b1')), nameOf), 'Sam to Ravi, no run');
+          'SIX! Ravi hits Sam for 6');
+      expect(ballCommentary(rec(const CricketEvent.bat(1, 'b1', 2)), nameOf), 'Ravi takes 2 runs off Sam');
+      expect(ballCommentary(rec(const CricketEvent.bat(1, 'b1', 1)), nameOf), 'Ravi takes 1 run off Sam');
+      expect(ballCommentary(rec(const CricketEvent.dot(1, 'b1')), nameOf), 'Dot ball: Ravi defends Sam\'s ball');
     });
 
     test('extras and dead ball', () {
-      expect(ballCommentary(rec(const CricketEvent.wide(1, 'b1')), nameOf), 'Sam to Ravi, Wide');
+      expect(ballCommentary(rec(const CricketEvent.wide(1, 'b1')), nameOf), 'Wide ball by Sam (+1)');
       expect(ballCommentary(rec(const CricketEvent.noBall(1, 'b1')), nameOf),
-          'Sam to Ravi, No ball — free hit next');
+          'No ball by Sam (+1) — free hit next');
       expect(
           ballCommentary(
               rec(const CricketEvent(seq: 1, bowlerId: 'b1', delivery: Delivery.deadBall)), nameOf),
@@ -418,18 +418,40 @@ void main() {
 
     test('wickets name the batter and fielder', () {
       final bowled = rec(CricketEvent.wicketBall(1, 'b1', bowledA1()));
-      expect(ballCommentary(bowled, nameOf), 'Sam to Ravi, OUT! Ravi is bowled!');
+      expect(ballCommentary(bowled, nameOf), 'OUT! Ravi is bowled by Sam');
       final caught = rec(const CricketEvent.wicketBall(
         1,
         'b1',
         Wicket(kind: WicketKind.caught, outBatterId: 'a1', fielderId: 'b2', newBatterId: 'a3'),
       ));
-      expect(ballCommentary(caught, nameOf), 'Sam to Ravi, OUT! Ravi is caught by Anil!');
+      expect(ballCommentary(caught, nameOf), 'OUT! Ravi is caught by Anil (bowler Sam)');
+    });
+
+    test('the batter comes first and every wicket kind names the bowler or fielder', () {
+      Wicket w(WicketKind k, {String? fielder}) =>
+          Wicket(kind: k, outBatterId: 'a1', fielderId: fielder, newBatterId: 'a3');
+      String say(WicketKind k, {String? fielder}) =>
+          ballCommentary(rec(CricketEvent.wicketBall(1, 'b1', w(k, fielder: fielder))), nameOf);
+      expect(say(WicketKind.lbw), 'OUT! Ravi is out LBW (bowler Sam)');
+      expect(say(WicketKind.stumped), 'OUT! Ravi is stumped (bowler Sam)');
+      expect(say(WicketKind.hitWicket), 'OUT! Ravi is out, hit wicket (bowler Sam)');
+      expect(say(WicketKind.runOut, fielder: 'b2'), 'OUT! Ravi is run out by Anil');
+      expect(say(WicketKind.runOut), 'OUT! Ravi is run out');
+      expect(say(WicketKind.caught), 'OUT! Ravi is caught (bowler Sam)');
+    });
+
+    test('no ball with runs, byes and a ran four', () {
+      expect(
+        ballCommentary(rec(const CricketEvent(seq: 1, bowlerId: 'b1', delivery: Delivery.noBall, runType: RunType.bat, runs: 4, boundary: Boundary.four)), nameOf),
+        'No ball by Sam (+5) — Ravi scores 4 — free hit next',
+      );
+      expect(ballCommentary(rec(const CricketEvent.bye(1, 'b1', 2)), nameOf), '2 byes/leg byes off Sam\'s ball');
+      expect(ballCommentary(rec(const CricketEvent.bat(1, 'b1', 4)), nameOf), 'Ravi takes 4 runs off Sam');
     });
 
     test('names are resolved at read time (a rename changes the text, nothing stored)', () {
       final record = rec(const CricketEvent.bat(1, 'b1', 4, boundary: Boundary.four));
-      expect(ballCommentary(record, (id) => 'Renamed-$id'), 'Renamed-b1 to Renamed-a1, FOUR!');
+      expect(ballCommentary(record, (id) => 'Renamed-$id'), 'FOUR! Renamed-a1 hits Renamed-b1 for 4');
     });
   });
 }

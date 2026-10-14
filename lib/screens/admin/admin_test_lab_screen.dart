@@ -395,7 +395,8 @@ class _SportLabState extends State<_SportLab> {
                   const SizedBox(height: 2),
                   Text(
                     'Plays whole matches ball by ball with the real scoring engine (squads, toss, both innings, '
-                    'result) — then open any match to see its balls, edit one, or reopen it. Each button only '
+                    'result). To see the balls: Admin > Matches > pick a match > Live scoring > the list icon at the top '
+                    '(All balls). Tap a ball to edit it. Each button only '
                     'plays matches that have no result yet: league first, then tie-breakers, then the knockout. '
                     'To try scoring by hand instead, open a match from Matches and tap Start scoring.',
                     style: textTheme.bodySmall,
@@ -408,23 +409,44 @@ class _SportLabState extends State<_SportLab> {
                       OutlinedButton(
                         onPressed: locked
                             ? null
-                            : () => _run('Playing league…', () async {
+                            : () async {
+                                if (!await _confirm(
+                                  'Play the league now?',
+                                  'Plays every test league match that has no result yet, ball by ball, with '
+                                      'random scores (the test schedule has ${counts.matches} matches). '
+                                      'Only test data is touched.',
+                                  'Play league',
+                                )) {
+                                  return;
+                                }
+                                await _run('Playing league…', () async {
                                   final r = await _service.playCricketStage(widget.sport, widget.season,
                                       stage: 'league');
                                   return r.played == 0 && r.note == null
                                       ? 'Nothing to play — every league match already has a result.'
                                       : 'Played ${r.played} league matches.${r.note == null ? '' : ' ${r.note}'}';
-                                }),
+                                });
+                              },
                         child: const Text('Play league (random)'),
                       ),
                       OutlinedButton(
                         onPressed: locked
                             ? null
-                            : () => _run('Playing knockout…', () async {
+                            : () async {
+                                if (!await _confirm(
+                                  'Play the knockout now?',
+                                  'Plays the test knockout matches that are ready and have no result yet, with '
+                                      'random scores, and moves the winners on. Only test data is touched.',
+                                  'Play knockout',
+                                )) {
+                                  return;
+                                }
+                                await _run('Playing knockout…', () async {
                                   final r = await _service.playCricketKnockout(widget.sport, widget.season);
                                   return 'Played ${r.played} knockout match${r.played == 1 ? '' : 'es'}.'
                                       '${r.note == null ? '' : ' ${r.note}'}';
-                                }),
+                                });
+                              },
                         child: const Text('Play knockout'),
                       ),
                     ],

@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/cricket/commentary_text.dart';
 import '../../core/cricket/cricket_event.dart';
 import '../../core/cricket/innings_replay.dart';
 import '../../core/cricket/match_result.dart';
@@ -9,6 +10,7 @@ import '../../core/cricket/match_scoring.dart';
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
+import '../../models/match.dart';
 import 'cricket_scoring/ball_list_screen.dart';
 import 'cricket_scoring/scoring_controller.dart';
 import 'cricket_scoring/wicket_sheet.dart';
@@ -57,6 +59,50 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
   /// when there is no signal, so the keypad never waits on the network.
   void _fire(Future<void> write) {
     write.catchError((Object e) => _say('$e'));
+  }
+
+  /// A short message after a one-tap action, optionally with an UNDO button, so
+  /// nothing the scorer taps by accident is silent. It floats at the TOP of the
+  /// screen: at the bottom it would cover the keypad and the Undo button.
+  void _toast(String message, {bool withUndo = false}) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final height = MediaQuery.of(context).size.height;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      content: Text(message),
+      duration: const Duration(seconds: 4),
+      behavior: SnackBarBehavior.floating,
+      margin: EdgeInsets.fromLTRB(12, 0, 12, (height - 140).clamp(0, height)),
+      action: withUndo ? SnackBarAction(label: 'UNDO', onPressed: () => _undo(quiet: true)) : null,
+    ));
+  }
+
+  void _saidWithUndo(String message) => _toast(message, withUndo: true);
+
+  /// What the newest entry of the innings being scored is, in words.
+  String? _describeLast() {
+    final cur = _c.state?.current;
+    if (cur == null) return null;
+    final events = [...cur.events]..sort((a, b) => a.seq.compareTo(b.seq));
+    if (events.isEmpty) return null;
+    final last = events.last;
+    for (final b in cur.result.balls) {
+      if (b.seq == last.seq) return ballCommentary(b, _c.nameOf, freeHitRule: _c.rules.freeHit);
+    }
+    return switch (last.kind) {
+      EventKind.swapStrike => 'Batters swapped ends',
+      EventKind.retire => 'A batter retired',
+      EventKind.endInnings => 'Innings ended',
+      EventKind.ball => 'The last ball',
+    };
+  }
+
+  /// Removes the newest entry and says which one it was.
+  void _undo({bool quiet = false}) {
+    final what = _describeLast();
+    _fire(_c.undo());
+    if (!quiet && what != null) _toast('Undid: $what');
   }
 
   void _resetNextBall() => setState(() {
@@ -129,6 +175,7 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
       if (next == null) return;
     }
     _fire(_c.addEvent(CricketEvent.retire(seq: 0, retiredBatterId: who, newBatterId: next)));
+    _saidWithUndo('${_c.nameOf(who)} retired${next == null ? '' : ' — ${_c.nameOf(next)} comes in'}');
   }
 
   Future<void> _endInnings(MatchScoringState s) async {
@@ -151,6 +198,37 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
   }
 
   Future<void> _saveResult() async {
+    final state = _c.state;
+    final match = _c.match;
+    if (state != null && state.result != null && match != null) {
+      final knockout = match.stage == MatchStage.knockout;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Save this result?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(state.result!.text, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+              const SizedBox(height: AppSpacing.sm),
+              for (final v in state.innings)
+                Text('${_c.teamName(v.battingSide)}: ${v.result.scoreText} (${v.result.oversText} ov)'),
+              const SizedBox(height: AppSpacing.sm),
+              Text(knockout
+                  ? 'The winner moves on to the next round of the bracket. Viewers see the result at once.'
+                  : 'This counts in the points table. Viewers see the result at once.'),
+              const Text('You can still reopen the match to fix a ball.'),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save result')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
     try {
       final problem = await _c.finish();
       if (problem != null) _say(problem);
@@ -346,7 +424,13 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
                                 style: textTheme.bodyLarge),
                           ),
                           if (bowler != null)
-                            Text('${bowler.oversText}-${bowler.maidens}-${bowler.runsConceded}-${bowler.wickets}'),
+                            Flexible(
+                              child: Text(
+                                '${bowler.oversText} ov · ${bowler.runsConceded} ${bowler.runsConceded == 1 ? 'run' : 'runs'} · ${bowler.wickets} ${bowler.wickets == 1 ? 'wkt' : 'wkts'}',
+                                style: textTheme.bodySmall,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                         ],
                       ),
                       if (overBalls.isNotEmpty) ...[
@@ -527,7 +611,7 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
                 children: [
                   Expanded(
                     child: TextButton.icon(
-                      onPressed: () => _fire(_c.undo()),
+                      onPressed: _undo,
                       icon: const Icon(Icons.undo),
                       label: const Text('Undo'),
                     ),
@@ -545,6 +629,7 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
                       switch (v) {
                         case 'swap':
                           _fire(_c.addEvent(const CricketEvent.swapStrike(0)));
+                          _saidWithUndo('Batters swapped ends');
                         case 'bowler':
                           setState(() => _chosenBowler = null);
                           _changeBowler(r);
@@ -553,6 +638,7 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
                         case 'dead':
                           _fire(_c.addBall((seq) =>
                               CricketEvent(seq: seq, bowlerId: _bowlerForNext(r), delivery: Delivery.deadBall)));
+                          _saidWithUndo('Dead ball recorded — it will be bowled again');
                         case 'end':
                           _endInnings(state);
                       }
@@ -660,7 +746,7 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
           TextButton.icon(
             icon: const Icon(Icons.undo),
             label: const Text('Undo the last ball'),
-            onPressed: () => _fire(_c.undo()),
+            onPressed: _undo,
           ),
         ],
       ],

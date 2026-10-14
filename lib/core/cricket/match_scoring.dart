@@ -336,6 +336,27 @@ InningsRecord inningsRecordOf(InningsView v, InningsStart start) => InningsRecor
 
 String _overs(InningsResult r) => r.oversText;
 
+/// Who is at the crease and who is bowling, for the match card:
+/// "Arun 12* (8), Gopi 3 (2) · Bowling: Dinesh 1-0-8-1". The * marks the
+/// batter on strike.
+String? liveLine(InningsResult r, String Function(String id) nameOf) {
+  String batter(String? id, {required bool strike}) {
+    if (id == null) return '';
+    final b = r.batters[id];
+    return '${nameOf(id)} ${b?.runs ?? 0}${strike ? '*' : ''} (${b?.balls ?? 0})';
+  }
+
+  final batters = [
+    batter(r.strikerId, strike: true),
+    batter(r.nonStrikerId, strike: false),
+  ].where((t) => t.isNotEmpty).join(', ');
+  if (batters.isEmpty) return null;
+  final id = r.currentBowlerId;
+  final bowler = id == null ? null : r.bowlers[id];
+  if (id == null || bowler == null) return batters;
+  return '$batters · Bowling: ${nameOf(id)} ${bowler.oversText}-${bowler.maidens}-${bowler.runsConceded}-${bowler.wickets}';
+}
+
 /// The cached summary of the match, written in the same batch as the ball so
 /// the doc never disagrees with the log. Keys are the match doc's fields.
 Map<String, dynamic> summaryFields({
@@ -352,6 +373,7 @@ Map<String, dynamic> summaryFields({
   ];
 
   String? summary;
+  String? liveText;
   Map<String, dynamic>? live;
   final cur = state.current;
   if (cur != null) {
@@ -368,6 +390,7 @@ Map<String, dynamic> summaryFields({
           'bowlerId': r.currentBowlerId,
           'freeHit': r.freeHitNext,
         };
+        liveText = liveLine(r, nameOf);
       case ScoringPhase.awaitingInnings:
         final other = teamName[otherSide(cur.battingSide)]!;
         summary = '$batName ${r.scoreText} (${_overs(r)} ov) · $other to bat';
@@ -387,6 +410,7 @@ Map<String, dynamic> summaryFields({
     'innings': innings,
     'live': live,
     'summaryText': summary,
+    'liveText': liveText,
     'scoreA': state.runsFor('A'),
     'scoreB': state.runsFor('B'),
     'lastCommentaryText': commentary,
