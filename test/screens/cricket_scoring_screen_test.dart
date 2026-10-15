@@ -22,17 +22,17 @@ const _rules = CricketRules(
 late FakeFirebaseFirestore db;
 late CricketScoringController controller;
 
-Future<void> _seed({bool ready = true}) async {
+Future<void> _seed({bool ready = true, String stage = 'league', int overs = 2}) async {
   db = FakeFirebaseFirestore();
   List<Map<String, dynamic>> players(String p) =>
       [for (var i = 1; i <= 4; i++) Player(id: '$p$i', name: '${p.toUpperCase()}$i').toMap()];
   await db.collection('teams').doc('tA').set({'sport': 'cricket', 'category': 'boys', 'season': '2026', 'name': 'Reds', 'players': players('a')});
   await db.collection('teams').doc('tB').set({'sport': 'cricket', 'category': 'boys', 'season': '2026', 'name': 'Blues', 'players': players('b')});
   await db.collection('matches').doc('m1').set({
-    'sport': 'cricket', 'category': 'boys', 'season': '2026', 'stage': 'league', 'matchNumber': 1,
+    'sport': 'cricket', 'category': 'boys', 'season': '2026', 'stage': stage, 'matchNumber': 1,
     'label': 'Match 1', 'matchCode': 'L1', 'status': 'upcoming', 'notifyTopic': '',
     'teamA': {'teamId': 'tA', 'name': 'Reds'}, 'teamB': {'teamId': 'tB', 'name': 'Blues'},
-    'rules': _rules.toMap(),
+    'rules': _rules.copyWith(overs: overs).toMap(),
     if (ready) ...{
       'lineupA': ['a1', 'a2', 'a3', 'a4'],
       'lineupB': ['b1', 'b2', 'b3', 'b4'],
@@ -66,6 +66,7 @@ Future<Map<String, dynamic>> _match(WidgetTester tester) async =>
 
 Future<void> _tap(WidgetTester tester, Finder f) async {
   await tester.ensureVisible(f);
+  await tester.pump(); // the scroll has to land before the tap's position is read
   await tester.tap(f, warnIfMissed: false);
   await _settle(tester);
 }
@@ -273,6 +274,79 @@ void main() {
         m = await _match(tester);
         expect(m['status'], 'live');
         expect(m['result'], isNull);
+        expect(tester.takeException(), isNull);
+      });
+
+      /// Plays a one-over knockout to a 6–6 tie through the screen.
+      Future<void> playToTie(WidgetTester tester) async {
+        await _seed(stage: 'knockout', overs: 1);
+        await _pumpScreen(tester, size: size);
+        await _startAndPickBowler(tester);
+        for (var i = 0; i < 6; i++) {
+          await _tap(tester, _key('1'));
+        }
+        await _tap(tester, find.text('Start innings'));
+        await _tap(tester, find.text('A1'));
+        for (var i = 0; i < 6; i++) {
+          await _tap(tester, _key('1'));
+        }
+      }
+
+      testWidgets('a tied knockout offers a super over, plays it, and the result names the winner', (tester) async {
+        await playToTie(tester);
+        expect(find.text('Match tied'), findsOneWidget);
+        expect(find.textContaining('Blues bat first in the super over'), findsOneWidget);
+        expect(find.text('Pick the winner by hand'), findsOneWidget);
+        expect((await _match(tester))['summaryText'], 'Match tied · super over next');
+
+        // Blues batted second, so they open the super over.
+        await _tap(tester, find.text('Start super over innings'));
+        await _tap(tester, find.text('A1'));
+        expect(find.textContaining('SUPER OVER · 1 over · 2 wickets'), findsOneWidget);
+        await _tap(tester, _key('4'));
+        for (var i = 0; i < 5; i++) {
+          await _tap(tester, _key('0'));
+        }
+        expect(find.text('Super over — innings break'), findsOneWidget);
+        expect(find.textContaining('Reds need 5 runs in 1 over'), findsOneWidget);
+
+        await _tap(tester, find.text('Start super over innings'));
+        await _tap(tester, find.text('B1'));
+        await _tap(tester, _key('6'));
+        expect(find.text('Match over'), findsOneWidget);
+        expect(find.text('Match tied — Reds won the super over (6/0 to 4/0)'), findsOneWidget);
+        expect(find.text('Super over · Blues: 4/0 (1.0 ov)'), findsOneWidget);
+
+        await _tap(tester, find.text('Save result'));
+        expect(find.text('Save this result?'), findsOneWidget);
+        expect(find.textContaining('moves on to the next round'), findsOneWidget);
+        await _tap(tester, find.widgetWithText(FilledButton, 'Save result').last);
+        final m = await _match(tester);
+        expect(m['status'], 'completed');
+        expect(m['result'], 'teamA');
+        expect([m['scoreA'], m['scoreB']], [6, 6]);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('the winner can be picked by hand (with a warning), and the pick taken back', (tester) async {
+        await playToTie(tester);
+        await _tap(tester, find.widgetWithText(OutlinedButton, 'Reds'));
+        expect(find.text('Give the win to Reds?'), findsOneWidget);
+        // Cancel changes nothing.
+        await _tap(tester, find.text('Cancel'));
+        await tester.pump(const Duration(seconds: 1));
+        expect((await _match(tester))['tieDecision'], isNull);
+
+        await _tap(tester, find.widgetWithText(OutlinedButton, 'Reds'));
+        await _tap(tester, find.widgetWithText(FilledButton, 'Give Reds the win'));
+        expect(find.text('Match over'), findsOneWidget);
+        expect(find.textContaining('given the win'), findsOneWidget);
+        expect((await _match(tester))['tieDecision'], 'A');
+
+        await _tap(tester, find.text('Take back my pick'));
+        await _tap(tester, find.widgetWithText(FilledButton, 'Take it back'));
+        expect(find.text('Match tied'), findsOneWidget);
+        expect((await _match(tester))['tieDecision'], isNull);
         expect(tester.takeException(), isNull);
       });
 

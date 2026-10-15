@@ -164,6 +164,10 @@ class Match {
   /// batting and bowling, for the match card.
   final String? liveText;
 
+  /// 'A' | 'B' when the admin picked the winner of a tied knockout match by
+  /// hand instead of playing a super over; null otherwise.
+  final String? tieDecision;
+
   Match({
     required this.id,
     required this.sport,
@@ -201,6 +205,7 @@ class Match {
     this.live,
     this.resultText,
     this.liveText,
+    this.tieDecision,
   });
 
   factory Match.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -249,6 +254,7 @@ class Match {
       live: data['live'] is Map ? Map<String, dynamic>.from(data['live'] as Map) : null,
       resultText: data['resultText'] as String?,
       liveText: data['liveText'] as String?,
+      tieDecision: data['tieDecision'] as String?,
     );
   }
 
@@ -319,6 +325,7 @@ class Match {
         live: live,
         resultText: resultText,
         liveText: liveText,
+        tieDecision: tieDecision,
       );
 
   /// A match counts as played only when it is both marked completed *and*

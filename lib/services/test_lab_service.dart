@@ -248,6 +248,7 @@ class TestLabService {
     Match m,
     Random rnd, {
     List<Match> otherKnockout = const [],
+    bool forceTie = false,
   }) async {
     final teamA = Team.fromFirestore(await _db.collection(teamsCollection).doc(m.teamA.teamId).get());
     final teamB = Team.fromFirestore(await _db.collection(teamsCollection).doc(m.teamB.teamId).get());
@@ -266,16 +267,21 @@ class TestLabService {
     }
 
     final isKnockout = m.stage == MatchStage.knockout;
+    final superOver = isKnockout && rules.superOverOnKnockoutTie;
+    // [forceTie] keeps re-playing until the two main innings finish level, so a
+    // super over is guaranteed (a 6-over match is only level now and then).
+    final wantTie = forceTie && superOver;
     CricketToss? toss;
     SimulatedMatch? sim;
     MatchScoringState? state;
-    for (var attempt = 0; attempt < 40; attempt++) {
+    for (var attempt = 0; attempt < (wantTie ? 1500 : 40); attempt++) {
       toss = CricketToss(winner: rnd.nextBool() ? 'A' : 'B', elected: rnd.nextBool() ? 'bat' : 'bowl');
       sim = simulateMatch(
         rules: rules,
         lineupA: lineupA,
         lineupB: lineupB,
         battingFirst: toss.battingFirstSide,
+        superOver: superOver,
         random: rnd,
       );
       state = deriveMatchState(
@@ -287,15 +293,24 @@ class TestLabService {
         events: sim.events,
         nameA: m.teamA.name ?? 'Team A',
         nameB: m.teamB.name ?? 'Team B',
+        knockout: isKnockout,
       );
-      // A knockout needs a winner (super overs come later), so replay a tie.
-      if (!isKnockout || state.result?.winner != CricketWinner.tie) break;
+      final levelAfterMain = state.innings.length >= 2 &&
+          state.innings[0].result.runs == state.innings[1].result.runs;
+      if (wantTie) {
+        if (levelAfterMain && state.result?.winner != CricketWinner.tie) break;
+      } else if (!isKnockout || state.result?.winner != CricketWinner.tie) {
+        break;
+      }
     }
     if (state == null || state.result == null || sim == null || toss == null) {
       return '${m.label}: could not play it.';
     }
     if (isKnockout && state.result!.winner == CricketWinner.tie) {
-      return '${m.label}: stayed tied after many tries — super overs aren\'t built yet.';
+      return '${m.label}: stayed tied after many tries.';
+    }
+    if (wantTie && !(state.innings.length > 2)) {
+      return '${m.label}: could not make the scores level (tried many times).';
     }
 
     final names = {for (final p in [...teamA.players, ...teamB.players]) p.id: p.name};
@@ -384,7 +399,11 @@ class TestLabService {
 
   /// Plays the cricket knockout one match at a time so each result fills the
   /// next round, like saving real results.
-  Future<({int played, String? note})> playCricketKnockout(String sport, String season, {Random? random}) async {
+  ///
+  /// With [forceTie], every match is played until its main innings end level, so
+  /// the super over (or the lack of one) can be tested.
+  Future<({int played, String? note})> playCricketKnockout(String sport, String season,
+      {Random? random, bool forceTie = false}) async {
     final rnd = random ?? Random();
     var played = 0;
     for (var guard = 0; guard < 20; guard++) {
@@ -397,7 +416,8 @@ class TestLabService {
           .where((m) => m.result == null && m.teamA.teamId != null && m.teamB.teamId != null)
           .firstOrNull;
       if (next == null) return (played: played, note: _knockoutNote(all));
-      final problem = await _playCricketMatch(next, rnd, otherKnockout: all.where((m) => m.id != next.id).toList());
+      final problem = await _playCricketMatch(next, rnd,
+          otherKnockout: all.where((m) => m.id != next.id).toList(), forceTie: forceTie);
       if (problem != null) return (played: played, note: problem);
       played++;
     }

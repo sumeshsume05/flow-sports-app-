@@ -205,6 +205,10 @@ class InningsSetup {
   /// Revised overs (e.g. a shortened chase); defaults to `rules.overs`.
   final int? maxOvers;
 
+  /// Most wickets this innings can lose (a super over allows 2); null = what
+  /// the rules allow for the squad. Never more than the rules allow.
+  final int? maxWickets;
+
   const InningsSetup({
     required this.battingLineup,
     required this.bowlingLineup,
@@ -212,6 +216,7 @@ class InningsSetup {
     required this.nonStrikerId,
     this.target,
     this.maxOvers,
+    this.maxWickets,
   });
 }
 
@@ -355,7 +360,9 @@ class _Replayer {
         setup.strikerId == setup.nonStrikerId) {
       throw ArgumentError('Openers must be two different players from the batting lineup');
     }
-    maxWickets = rules.maxWickets(setup.battingLineup.length);
+    final allowed = rules.maxWickets(setup.battingLineup.length);
+    final cap = setup.maxWickets;
+    maxWickets = cap == null || cap > allowed ? allowed : cap;
     maxBalls = (setup.maxOvers ?? rules.overs) * rules.ballsPerOver;
     for (final id in setup.battingLineup) {
       batters[id] = BatterStats(id, BatterStatus.yetToBat);

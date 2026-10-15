@@ -129,7 +129,7 @@ class _SideRow extends StatelessWidget {
       fontSize: large ? 14 : 12,
       color: color ?? scheme.onSurfaceVariant,
     );
-    return Row(
+    final row = Row(
       children: [
         if (won) ...[
           Icon(Icons.emoji_events_rounded, size: large ? 20 : 14, color: scheme.primary),
@@ -146,6 +146,22 @@ class _SideRow extends StatelessWidget {
           Text('(${score.overs} ov)', style: oversStyle),
         ] else if (showYetToBat)
           Text('Yet to bat', style: oversStyle),
+      ],
+    );
+    final so = score.superOver;
+    if (so == null) return row;
+    final soColor = score.superOverBatting ? AppColors.live : scheme.onSurfaceVariant;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        row,
+        Align(
+          alignment: Alignment.centerRight,
+          child: Text(
+            'Super over  $so',
+            style: oversStyle.copyWith(color: soColor, fontWeight: FontWeight.w700),
+          ),
+        ),
       ],
     );
   }

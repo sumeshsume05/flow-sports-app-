@@ -449,6 +449,28 @@ class _SportLabState extends State<_SportLab> {
                               },
                         child: const Text('Play knockout'),
                       ),
+                      OutlinedButton(
+                        onPressed: locked
+                            ? null
+                            : () async {
+                                if (!await _confirm(
+                                  'Play the knockout with ties?',
+                                  'Plays the ready test knockout matches so that each one ends LEVEL after both '
+                                      'innings, then settles it with a super over. Use it to see super overs on '
+                                      'the match page and the scorecard. Only test data is touched.',
+                                  'Play knockout (ties)',
+                                )) {
+                                  return;
+                                }
+                                await _run('Playing knockout with ties…', () async {
+                                  final r = await _service.playCricketKnockout(widget.sport, widget.season,
+                                      forceTie: true);
+                                  return 'Played ${r.played} knockout match${r.played == 1 ? '' : 'es'}.'
+                                      '${r.note == null ? '' : ' ${r.note}'}';
+                                });
+                              },
+                        child: const Text('Play knockout (ties → super over)'),
+                      ),
                     ],
                   ),
                 ],

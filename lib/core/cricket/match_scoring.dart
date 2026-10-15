@@ -109,6 +109,13 @@ class InningsView {
   const InningsView(this.index, this.battingSide, this.result, this.events);
 
   String get bowlingSide => battingSide == 'A' ? 'B' : 'A';
+
+  /// Innings 0 and 1 are the match; 2 and 3 are the first super over, 4 and 5
+  /// the second (if the first was tied again), and so on.
+  bool get isSuperOver => index >= 2;
+
+  /// 1 for the first super over, 2 for the next…; 0 for a main innings.
+  int get superOverNumber => isSuperOver ? (index - 2) ~/ 2 + 1 : 0;
 }
 
 class MatchScoringState {
@@ -118,13 +125,21 @@ class MatchScoringState {
   final int nextInningsIndex;
   final CricketMatchResult? result;
 
+  /// The winner was picked by the admin (a tie nobody could settle on the
+  /// field), not worked out from the scores.
+  final bool decidedByAdmin;
+
   const MatchScoringState({
     required this.phase,
     this.problem,
     this.innings = const [],
     this.nextInningsIndex = 0,
     this.result,
+    this.decidedByAdmin = false,
   });
+
+  /// The match is level and the next innings to start is a super over.
+  bool get superOverNext => phase == ScoringPhase.awaitingInnings && nextInningsIndex >= 2;
 
   InningsView? get current => innings.isEmpty ? null : innings.last;
 
@@ -132,12 +147,29 @@ class MatchScoringState {
   List<ReviewFlag> get blockingFlags => [for (final i in innings) ...i.result.blockingFlags];
   bool get hasBlockingFlags => blockingFlags.isNotEmpty;
 
-  /// Main-innings runs for one side of the match.
-  int runsFor(String side) =>
-      innings.where((i) => i.battingSide == side).fold(0, (s, i) => s + i.result.runs);
+  /// Main-innings runs for one side of the match (super overs don't count).
+  int runsFor(String side) => innings
+      .where((i) => !i.isSuperOver && i.battingSide == side)
+      .fold(0, (s, i) => s + i.result.runs);
 }
 
 String otherSide(String side) => side == 'A' ? 'B' : 'A';
+
+/// A super over is one over with at most this many wickets.
+const superOverOvers = 1;
+const superOverWickets = 2;
+
+/// Most super-over innings the engine will replay (a safety stop, not a rule).
+const _maxSuperOverInnings = 20;
+
+/// Which side ('A' | 'B') bats in innings [index], given the side that batted
+/// first in the match. In the first super over the side that batted SECOND in
+/// the match bats first; if it is tied again the order flips each time.
+String battingSideForInnings(String first, int index) {
+  if (index < 2) return index.isEven ? first : otherSide(first);
+  final opener = ((index - 2) ~/ 2).isEven ? otherSide(first) : first;
+  return index.isEven ? opener : otherSide(opener);
+}
 
 /// Replays every started innings and works out where the match is. Pure: the
 /// scoring screen, the Test Lab auto-play and the tests all go through this.
@@ -150,6 +182,8 @@ MatchScoringState deriveMatchState({
   required List<LoggedEvent> events,
   required String nameA,
   required String nameB,
+  bool knockout = false,
+  String? tieDecision,
 }) {
   if (toss == null) {
     return const MatchScoringState(
@@ -163,8 +197,9 @@ MatchScoringState deriveMatchState({
 
   final first = toss.battingFirstSide;
   final views = <InningsView>[];
-  for (var i = 0; i < starts.length && i < 2; i++) {
-    final side = i.isEven ? first : otherSide(first);
+  for (var i = 0; i < starts.length && i < 2 + _maxSuperOverInnings; i++) {
+    final side = battingSideForInnings(first, i);
+    final superOver = i >= 2;
     final batting = side == 'A' ? lineupA : lineupB;
     final bowling = side == 'A' ? lineupB : lineupA;
     final evs = [for (final e in events) if (e.innings == i) e.event];
@@ -177,15 +212,17 @@ MatchScoringState deriveMatchState({
           bowlingLineup: bowling,
           strikerId: starts[i].strikerId,
           nonStrikerId: starts[i].nonStrikerId,
-          target: i == 1 ? views[0].result.runs + 1 : null,
-          maxOvers: starts[i].maxOvers,
+          // The second innings of the match and of each super over chases.
+          target: i.isOdd ? views[i - 1].result.runs + 1 : null,
+          maxOvers: superOver ? superOverOvers : starts[i].maxOvers,
+          maxWickets: superOver ? superOverWickets : null,
         ),
         evs,
       );
     } on ArgumentError {
       return MatchScoringState(
         phase: ScoringPhase.broken,
-        problem: 'The openers of innings ${i + 1} are no longer in the squad. '
+        problem: 'The openers of ${superOver ? 'the super over' : 'innings ${i + 1}'} are no longer in the squad. '
             'Put them back in match setup, or reset the match.',
         innings: views,
       );
@@ -203,17 +240,51 @@ MatchScoringState deriveMatchState({
   if (views.length == 1) {
     return MatchScoringState(phase: ScoringPhase.awaitingInnings, innings: views, nextInningsIndex: 1);
   }
-  return MatchScoringState(
-    phase: ScoringPhase.finished,
-    innings: views,
-    result: computeMatchResult(
-      first: views[0].result,
-      second: views[1].result,
-      firstBattingSide: first,
-      teamAName: nameA,
-      teamBName: nameB,
-    ),
+  final main = computeMatchResult(
+    first: views[0].result,
+    second: views[1].result,
+    firstBattingSide: first,
+    teamAName: nameA,
+    teamBName: nameB,
   );
+  MatchScoringState finished(CricketMatchResult? r, {bool byAdmin = false}) => MatchScoringState(
+        phase: ScoringPhase.finished,
+        innings: views,
+        result: r,
+        decidedByAdmin: byAdmin,
+      );
+  if (main == null || main.winner != CricketWinner.tie) return finished(main);
+
+  // The match is level. A finished super over settles it unless it was tied too.
+  final teamName = {'A': nameA, 'B': nameB};
+  final n = views.length;
+  if (n >= 4 && n.isEven) {
+    final a = views[n - 2];
+    final b = views[n - 1];
+    if (a.result.runs != b.result.runs) {
+      final win = b.result.runs > a.result.runs ? b : a;
+      final lose = win == a ? b : a;
+      final number = b.superOverNumber;
+      return finished(CricketMatchResult(
+        win.battingSide == 'A' ? CricketWinner.teamA : CricketWinner.teamB,
+        'Match tied — ${teamName[win.battingSide]} won '
+        '${number == 1 ? 'the super over' : 'super over $number'} '
+        '(${win.result.scoreText} to ${lose.result.scoreText})',
+      ));
+    }
+  }
+  // Nobody can settle it on the field (or the admin chose to skip it).
+  if (tieDecision == 'A' || tieDecision == 'B') {
+    return finished(
+      CricketMatchResult(
+        tieDecision == 'A' ? CricketWinner.teamA : CricketWinner.teamB,
+        'Match tied — ${teamName[tieDecision]} given the win (decided by the admin)',
+      ),
+      byAdmin: true,
+    );
+  }
+  if (!(knockout && rules.superOverOnKnockoutTie)) return finished(main);
+  return MatchScoringState(phase: ScoringPhase.awaitingInnings, innings: views, nextInningsIndex: n);
 }
 
 // ---------------------------------------------------------------------------
@@ -382,7 +453,8 @@ Map<String, dynamic> summaryFields({
     switch (state.phase) {
       case ScoringPhase.scoring:
         final chase = chaseText(r, batName);
-        summary = '$batName ${r.scoreText} (${_overs(r)} ov)${chase == null ? '' : ' · $chase'}';
+        summary = '${cur.isSuperOver ? 'Super over: ' : ''}$batName ${r.scoreText} (${_overs(r)} ov)'
+            '${chase == null ? '' : ' · $chase'}';
         live = {
           'inningsIndex': cur.index,
           'strikerId': r.strikerId,
@@ -393,7 +465,15 @@ Map<String, dynamic> summaryFields({
         liveText = liveLine(r, nameOf);
       case ScoringPhase.awaitingInnings:
         final other = teamName[otherSide(cur.battingSide)]!;
-        summary = '$batName ${r.scoreText} (${_overs(r)} ov) · $other to bat';
+        if (!state.superOverNext) {
+          summary = '$batName ${r.scoreText} (${_overs(r)} ov) · $other to bat';
+        } else if (state.nextInningsIndex == 2) {
+          summary = 'Match tied · super over next';
+        } else if (state.nextInningsIndex.isEven) {
+          summary = 'Super over tied too · another super over next';
+        } else {
+          summary = 'Super over: $batName ${r.scoreText} (${_overs(r)} ov) · $other to bat';
+        }
       case ScoringPhase.finished:
         summary = state.result?.text;
       default:
