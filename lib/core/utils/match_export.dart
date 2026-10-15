@@ -50,12 +50,15 @@ String buildMatchesCsv(List<Match> matches) {
         csvSafe(m.teamB.name ?? 'TBD'),
         m.scoreA ?? '',
         m.scoreB ?? '',
-        switch (m.result) {
-          MatchResult.teamA => csvSafe(m.teamA.name ?? 'Team A'),
-          MatchResult.teamB => csvSafe(m.teamB.name ?? 'Team B'),
-          MatchResult.tie => 'Tie',
-          null => '',
-        },
+        if (m.resultType == ResultType.noResult)
+          'No result'
+        else
+          switch (m.result) {
+            MatchResult.teamA => csvSafe(m.teamA.name ?? 'Team A'),
+            MatchResult.teamB => csvSafe(m.teamB.name ?? 'Team B'),
+            MatchResult.tie => 'Tie',
+            null => '',
+          },
         m.status.name,
         csvSafe(m.venue ?? ''),
         csvSafe(m.court ?? ''),

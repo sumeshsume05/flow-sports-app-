@@ -22,11 +22,35 @@ CricketMatchSummary? summaryOfMatch(Match m) {
   final bId = m.teamB.teamId;
   if (aId == null || bId == null) return null;
 
+  // Abandoned: both sides share the points, nothing feeds net run rate.
+  if (m.resultType == ResultType.noResult) {
+    return CricketMatchSummary(
+      teamAId: aId,
+      teamBId: bId,
+      winner: CricketWinner.noResult,
+      runsA: 0,
+      runsB: 0,
+      countsForNrr: false,
+    );
+  }
+
   final winner = switch (m.result!) {
     MatchResult.teamA => CricketWinner.teamA,
     MatchResult.teamB => CricketWinner.teamB,
     MatchResult.tie => CricketWinner.tie,
   };
+
+  // A walkover earns the win but its (absent) scores never feed net run rate.
+  if (m.resultType == ResultType.walkover) {
+    return CricketMatchSummary(
+      teamAId: aId,
+      teamBId: bId,
+      winner: winner,
+      runsA: 0,
+      runsB: 0,
+      countsForNrr: false,
+    );
+  }
 
   InningsRecord? innings(String side) {
     for (final r in m.innings) {

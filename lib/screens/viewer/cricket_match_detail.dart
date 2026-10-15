@@ -500,13 +500,20 @@ class _ScorecardTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = data.state;
     if (!data.hasScorecard) {
-      final text = match.status == MatchStatus.upcoming
-          ? 'The scorecard appears once the match starts.'
-          : loading
-              ? 'Loading the scorecard…'
-              : failed
-                  ? 'The scorecard could not be loaded. Pull back and open the match again.'
-                  : 'No scorecard for this match yet.';
+      final String text;
+      if (match.resultType == ResultType.walkover) {
+        text = 'No scorecard — this match was a walkover.';
+      } else if (match.resultType == ResultType.noResult) {
+        text = 'No scorecard — this match ended with no result.';
+      } else if (match.status == MatchStatus.upcoming) {
+        text = 'The scorecard appears once the match starts.';
+      } else if (loading) {
+        text = 'Loading the scorecard…';
+      } else if (failed) {
+        text = 'The scorecard could not be loaded. Pull back and open the match again.';
+      } else {
+        text = 'No scorecard for this match yet.';
+      }
       return Center(
         child: Padding(padding: const EdgeInsets.all(AppSpacing.lg), child: Text(text)),
       );

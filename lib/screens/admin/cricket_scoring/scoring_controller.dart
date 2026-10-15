@@ -8,6 +8,7 @@ import '../../../core/cricket/match_scoring.dart';
 import '../../../core/utils/bracket_resolver.dart';
 import '../../../models/match.dart';
 import '../../../models/team.dart';
+import '../../../services/cricket_knockout.dart';
 import '../../../services/firestore_service.dart';
 
 /// Holds everything the cricket scoring screens share — the match doc, both
@@ -230,36 +231,15 @@ class CricketScoringController extends ChangeNotifier {
         return 'This knockout match is tied and a knockout needs a winner. Play a super over, or pick '
             'the winner by hand.';
       }
-      final all = await _service.fetchMatches(
-        sport: m.sport,
-        category: m.category,
-        season: m.season,
-        stage: 'knockout',
-      );
-      final completed = Match(
-        id: m.id,
-        sport: m.sport,
-        category: m.category,
-        season: m.season,
-        stage: m.stage,
-        matchNumber: m.matchNumber,
-        label: m.label,
-        matchCode: m.matchCode,
-        teamA: m.teamA,
-        teamB: m.teamB,
+      final plan = await planKnockoutAdvance(
+        _service,
+        m,
         scoreA: fields['scoreA'] as int,
         scoreB: fields['scoreB'] as int,
         result: fields['result'] == 'teamA' ? MatchResult.teamA : MatchResult.teamB,
-        status: MatchStatus.completed,
-        notifyTopic: m.notifyTopic,
       );
-      final others = all.where((x) => x.id != m.id).toList();
-      final stale = staleDependentUpdates(resolveDependentSlots(completed: completed, otherKnockoutMatches: others), all);
-      if (stale.isNotEmpty) {
-        return 'This changes who advances, but ${stale.map((x) => x.label).join(', ')} already started or was '
-            'played. Reset the later round first, then save this result.';
-      }
-      slotWrites = dependentSlotWrites(completed: completed, otherKnockoutMatches: others);
+      if (plan.problem != null) return plan.problem;
+      slotWrites = plan.writes;
     }
     await _service.finishCricketMatch(matchId, resultFields: fields, slotWrites: slotWrites);
     return null;
@@ -271,20 +251,9 @@ class CricketScoringController extends ChangeNotifier {
     final m = match!;
     var clears = <SlotWrite>[];
     if (m.stage == MatchStage.knockout) {
-      final all = await _service.fetchMatches(
-        sport: m.sport,
-        category: m.category,
-        season: m.season,
-        stage: 'knockout',
-      );
-      final dependents = dependentsOf(m.matchCode, all.where((x) => x.id != m.id).toList());
-      final started = dependents.where(isStarted).toList();
-      if (started.isNotEmpty) {
-        return "Can't reopen ${m.label}: ${started.map((x) => x.label).join(', ')} "
-            '${started.length == 1 ? 'has' : 'have'} already been started or played from its result. '
-            'Reset the later round first, then come back to this match.';
-      }
-      clears = unresolveSlotWrites(m.matchCode, dependents);
+      final plan = await planKnockoutReopen(_service, m);
+      if (plan.problem != null) return plan.problem;
+      clears = plan.clears;
     }
     await _service.reopenCricketMatch(matchId, clears: clears);
     return null;

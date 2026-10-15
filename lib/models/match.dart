@@ -14,6 +14,13 @@ enum MatchStatus { upcoming, live, completed }
 
 enum MatchResult { teamA, teamB, tie }
 
+/// Values of [Match.resultType] (cricket): how a match ended when it wasn't
+/// simply played to a result.
+class ResultType {
+  static const noResult = 'noResult';
+  static const walkover = 'walkover';
+}
+
 MatchStage stageFromString(String s) =>
     MatchStage.values.firstWhere((e) => e.name == s, orElse: () => MatchStage.league);
 
@@ -168,6 +175,13 @@ class Match {
   /// hand instead of playing a super over; null otherwise.
   final String? tieDecision;
 
+  /// Cricket only: 'noResult' (abandoned — both sides share the points) or
+  /// 'walkover' (one side didn't play, the other is given the win); null for a
+  /// match that was played to a result. A no-result match carries
+  /// `result: tie` so it still counts as finished, but the points table reads
+  /// this field first.
+  final String? resultType;
+
   Match({
     required this.id,
     required this.sport,
@@ -206,6 +220,7 @@ class Match {
     this.resultText,
     this.liveText,
     this.tieDecision,
+    this.resultType,
   });
 
   factory Match.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -255,6 +270,7 @@ class Match {
       resultText: data['resultText'] as String?,
       liveText: data['liveText'] as String?,
       tieDecision: data['tieDecision'] as String?,
+      resultType: data['resultType'] as String?,
     );
   }
 
@@ -326,6 +342,7 @@ class Match {
         resultText: resultText,
         liveText: liveText,
         tieDecision: tieDecision,
+        resultType: resultType,
       );
 
   /// A match counts as played only when it is both marked completed *and*

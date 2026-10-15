@@ -7,6 +7,7 @@ import '../../core/cricket/cricket_toss.dart';
 import '../../core/cricket/match_display.dart';
 import '../../core/cricket/match_scoring.dart';
 import '../../core/cricket/setup_guard.dart';
+import '../../core/cricket/special_result.dart';
 import '../../core/cricket/rules_summary.dart';
 import '../../core/cricket/tournament_plan.dart';
 import '../../core/design/app_colors.dart';
@@ -15,6 +16,7 @@ import '../../core/design/app_spacing.dart';
 import '../../models/match.dart';
 import '../../models/player.dart';
 import '../../models/team.dart';
+import '../../services/cricket_special_result.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/cricket_rules_form.dart';
 
@@ -24,14 +26,17 @@ import '../../widgets/cricket_rules_form.dart';
 class AdminCricketMatchScreen extends StatefulWidget {
   final String matchId;
 
-  const AdminCricketMatchScreen({super.key, required this.matchId});
+  /// For tests; the app uses the shared Firestore.
+  final FirestoreService? service;
+
+  const AdminCricketMatchScreen({super.key, required this.matchId, this.service});
 
   @override
   State<AdminCricketMatchScreen> createState() => _AdminCricketMatchScreenState();
 }
 
 class _AdminCricketMatchScreenState extends State<AdminCricketMatchScreen> {
-  final _firestoreService = FirestoreService();
+  late final _firestoreService = widget.service ?? FirestoreService();
   late final _matchStream = _firestoreService.watchMatch(widget.matchId);
   final _venueController = TextEditingController();
 
@@ -240,6 +245,71 @@ class _AdminCricketMatchScreenState extends State<AdminCricketMatchScreen> {
     }
   }
 
+
+  /// Runs a result-saving action, then shows its outcome.
+  Future<void> _record(Future<String?> Function() action, String done) async {
+    try {
+      final problem = await action();
+      _say(problem ?? done);
+    } catch (e) {
+      _say('$e');
+    }
+  }
+
+  Future<void> _noResult(Match match) async {
+    final problem = noResultProblem(match);
+    if (problem != null) {
+      _say(problem);
+      return;
+    }
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) => _NoResultDialog(points: _rules?.pointsNoResult ?? 1),
+    );
+    if (reason == null) return;
+    await _record(() => recordNoResult(_firestoreService, match, reason: reason), 'Saved as no result.');
+  }
+
+  Future<void> _walkover(Match match) async {
+    final problem = walkoverProblem(match);
+    if (problem != null) {
+      _say(problem);
+      return;
+    }
+    final pick = await showDialog<({String winner, String reason})>(
+      context: context,
+      builder: (context) => _WalkoverDialog(
+        nameA: match.teamA.name ?? 'Team A',
+        nameB: match.teamB.name ?? 'Team B',
+        points: _rules?.pointsWin ?? 2,
+        knockout: match.stage == MatchStage.knockout,
+      ),
+    );
+    if (pick == null) return;
+    await _record(
+      () => recordWalkover(_firestoreService, match, pick.winner, reason: pick.reason),
+      'Walkover saved.',
+    );
+  }
+
+  Future<void> _undoSpecial(Match match) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Take this result back?'),
+        content: Text(match.stage == MatchStage.knockout
+            ? 'The match goes back to not played, and the winner is removed from the next round.'
+            : 'The match goes back to not played, and its points are removed from the table.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Take it back')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await _record(() => undoSpecialResult(_firestoreService, match), 'Result taken back.');
+  }
+
   static String? _withName(String team, String? warning) => warning == null ? null : '$team: $warning';
 
   @override
@@ -414,6 +484,47 @@ class _AdminCricketMatchScreenState extends State<AdminCricketMatchScreen> {
                     style: textTheme.bodySmall),
               ),
           ]),
+          if (match.status != MatchStatus.completed || match.resultType != null)
+            card('Not played normally?', [
+              if (match.resultType != null) ...[
+                Text(
+                  match.resultType == ResultType.walkover
+                      ? 'This match was given as a walkover.'
+                      : 'This match was called off with no result.',
+                  style: textTheme.bodyMedium,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.undo),
+                  label: const Text('Take this result back'),
+                  onPressed: () => _undoSpecial(match),
+                ),
+              ] else ...[
+                Text(
+                  match.stage == MatchStage.knockout
+                      ? 'If a team does not turn up, give the other team a walkover.'
+                      : 'Called off, or a team did not turn up? Finish the match without scoring it.',
+                  style: textTheme.bodySmall,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  children: [
+                    if (match.stage != MatchStage.knockout)
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.cloud_off_outlined),
+                        label: const Text('No result'),
+                        onPressed: () => _noResult(match),
+                      ),
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.flag_outlined),
+                      label: const Text('Walkover'),
+                      onPressed: () => _walkover(match),
+                    ),
+                  ],
+                ),
+              ],
+            ]),
           if (match.status != MatchStatus.upcoming)
             Container(
               margin: const EdgeInsets.only(bottom: AppSpacing.md),
@@ -544,6 +655,135 @@ class _AdminCricketMatchScreenState extends State<AdminCricketMatchScreen> {
           const SizedBox(height: AppSpacing.xl),
         ],
       ),
+    );
+  }
+}
+
+/// Asks for an optional reason; pops the reason text (maybe empty), or null on cancel.
+class _NoResultDialog extends StatefulWidget {
+  final int points;
+
+  const _NoResultDialog({required this.points});
+
+  @override
+  State<_NoResultDialog> createState() => _NoResultDialogState();
+}
+
+class _NoResultDialogState extends State<_NoResultDialog> {
+  final _reason = TextEditingController();
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final points = widget.points;
+    return AlertDialog(
+      title: const Text('Mark as no result?'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('The match is called off (rain, bad light, ...). Each team gets '
+                '$points point${points == 1 ? '' : 's'}. It does not count for net run rate.'),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              controller: _reason,
+              decoration: const InputDecoration(labelText: 'Reason (optional)', hintText: 'Rain'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, _reason.text),
+          child: const Text('Save no result'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Picks who is given the win and an optional reason; pops both, or null on cancel.
+class _WalkoverDialog extends StatefulWidget {
+  final String nameA;
+  final String nameB;
+  final int points;
+  final bool knockout;
+
+  const _WalkoverDialog({
+    required this.nameA,
+    required this.nameB,
+    required this.points,
+    required this.knockout,
+  });
+
+  @override
+  State<_WalkoverDialog> createState() => _WalkoverDialogState();
+}
+
+class _WalkoverDialogState extends State<_WalkoverDialog> {
+  final _reason = TextEditingController();
+  String? _winner;
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Walkover'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Who is given the win? (The other team did not play.)'),
+            RadioGroup<String>(
+              groupValue: _winner,
+              onChanged: (v) => setState(() => _winner = v),
+              child: Column(
+                children: [
+                  RadioListTile<String>(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(widget.nameA),
+                    value: 'A',
+                  ),
+                  RadioListTile<String>(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(widget.nameB),
+                    value: 'B',
+                  ),
+                ],
+              ),
+            ),
+            Text('The winner gets ${widget.points} points (the other team 0). It does not count for net run rate.'
+                '${widget.knockout ? ' The winner moves to the next round.' : ''}'),
+            const SizedBox(height: AppSpacing.sm),
+            TextField(
+              controller: _reason,
+              decoration: const InputDecoration(labelText: 'Reason (optional)', hintText: 'Did not turn up'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _winner == null
+              ? null
+              : () => Navigator.pop(context, (winner: _winner!, reason: _reason.text)),
+          child: const Text('Save walkover'),
+        ),
+      ],
     );
   }
 }

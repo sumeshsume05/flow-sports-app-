@@ -40,7 +40,8 @@ class CricketScoreBlock extends StatelessWidget {
             large: large,
             highlight: live && scores[i].batting,
             won: match.status == MatchStatus.completed && winner == scores[i].side,
-            showYetToBat: match.status != MatchStatus.upcoming,
+            // Nothing was bowled in a walkover / no-result match: no "Yet to bat".
+            showYetToBat: match.status != MatchStatus.upcoming && match.innings.isNotEmpty,
           ),
         ],
         if (live && match.liveText != null) ...[

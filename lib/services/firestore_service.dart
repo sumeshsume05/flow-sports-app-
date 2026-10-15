@@ -940,13 +940,22 @@ class FirestoreService {
 
   /// Reopens a finished cricket match so its balls can be edited again, and
   /// puts back to TBD any knockout slots its result had filled.
-  Future<void> reopenCricketMatch(String matchId, {required List<SlotWrite> clears}) async {
+  ///
+  /// [status] is what the match goes back to: live (balls to edit) by default,
+  /// upcoming for a walkover / no result that was never played. A
+  /// walkover / no-result marker is always cleared.
+  Future<void> reopenCricketMatch(
+    String matchId, {
+    required List<SlotWrite> clears,
+    MatchStatus status = MatchStatus.live,
+  }) async {
     try {
       final batch = _db.batch();
       batch.update(_db.collection(matchesCollection).doc(matchId), {
-        'status': MatchStatus.live.name,
+        'status': status.name,
         'result': null,
         'resultText': null,
+        'resultType': null,
       });
       for (final e in slotWriteFields(clears).entries) {
         batch.update(_db.collection(matchesCollection).doc(e.key), e.value);
