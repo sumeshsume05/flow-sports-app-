@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../core/design/app_colors.dart';
 import '../core/design/app_radius.dart';
 import '../core/design/app_spacing.dart';
+import '../core/utils/sport_standings.dart';
 import '../models/standing_row.dart';
 
 /// Renders standings as a list of rows that fit phone width with **no
@@ -89,7 +90,7 @@ class _StandingsRow extends StatelessWidget {
                 Text(row.teamName, style: textTheme.titleSmall, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 2),
                 Text(
-                  'P ${row.played} · W ${row.won} · T ${row.tied} · L ${row.lost} · Scored ${row.pointsScored}',
+                  standingDetail(row),
                   style: textTheme.bodySmall,
                   overflow: TextOverflow.ellipsis,
                 ),
