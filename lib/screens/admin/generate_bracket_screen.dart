@@ -7,6 +7,7 @@ import '../../core/design/app_spacing.dart';
 import '../../core/utils/bracket_resolver.dart';
 import '../../core/utils/round_robin.dart';
 import '../../core/utils/sections.dart';
+import '../../core/utils/sport_standings.dart';
 import '../../core/utils/standings_calculator.dart';
 import '../../models/match.dart';
 import '../../models/standing_row.dart';
@@ -109,7 +110,8 @@ class _GenerateBracketScreenState extends State<GenerateBracketScreen> {
     required List<Match> leagueMatches,
     required List<Match> tiebreakerMatches,
   }) {
-    final standings = computeStandings(teams: teams, leagueMatches: leagueMatches);
+    final standings =
+        computeSportStandings(sport: widget.sport, teams: teams, leagueMatches: leagueMatches);
     final rawCandidates = candidatesForTopFour(standings, cutoffCount: qualifyCount);
     final cluster = decidingTieCluster(rawCandidates, cutoffCount: qualifyCount);
 
@@ -728,7 +730,7 @@ class _SectionPanelView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${candidates[i].points} pts · ${candidates[i].pointsScored} scored (league)'
+                      '${candidates[i].points} pts · ${candidates[i].nrr == null ? '${candidates[i].pointsScored} scored' : 'NRR ${candidates[i].nrr! >= 0 ? '+' : '−'}${candidates[i].nrr!.abs().toStringAsFixed(3)}'} (league)'
                       '${contestStart != null && i >= contestStart ? " — contesting" : (contestStart == null && i >= qualifyCount ? " — OUT" : "")}',
                     ),
                     if (chain?.lastRoundStats[candidates[i].teamId] case final tb?)

@@ -64,8 +64,7 @@ List<StandingRow> computeStandings({
 
   for (var i = 0; i < sorted.length; i++) {
     sorted[i].rank = i + 1;
-    bool sameAs(StandingRow other) =>
-        other.points == sorted[i].points && other.pointsScored == sorted[i].pointsScored;
+    bool sameAs(StandingRow other) => other.isLevelWith(sorted[i]);
     sorted[i].tiedWithAnother =
         (i > 0 && sameAs(sorted[i - 1])) || (i < sorted.length - 1 && sameAs(sorted[i + 1]));
   }
@@ -79,9 +78,8 @@ List<StandingRow> computeStandings({
 bool topFourHasAmbiguousTie(List<StandingRow> standings, {int cutoffCount = 4}) {
   if (standings.length < cutoffCount) return standings.any((r) => r.tiedWithAnother);
   final cutoffIndex = cutoffCount - 1;
-  final cutoffTied = standings.length > cutoffCount &&
-      standings[cutoffIndex].points == standings[cutoffIndex + 1].points &&
-      standings[cutoffIndex].pointsScored == standings[cutoffIndex + 1].pointsScored;
+  final cutoffTied =
+      standings.length > cutoffCount && standings[cutoffIndex].isLevelWith(standings[cutoffIndex + 1]);
   return standings.take(cutoffCount).any((r) => r.tiedWithAnother) || cutoffTied;
 }
 
@@ -109,7 +107,7 @@ List<StandingRow> candidatesForTopFour(List<StandingRow> standings, {int cutoffC
   final cutoff = standings[cutoffCount - 1];
   final extras = standings
       .skip(cutoffCount)
-      .where((r) => r.points == cutoff.points && r.pointsScored == cutoff.pointsScored);
+      .where((r) => r.isLevelWith(cutoff));
   return [...standings.take(cutoffCount), ...extras];
 }
 
@@ -129,8 +127,7 @@ List<StandingRow>? decidingTieCluster(List<StandingRow> candidates, {int cutoffC
   if (candidates.length <= cutoffCount) return null;
   final cutoffIndex = cutoffCount - 1;
   final cutoff = candidates[cutoffIndex];
-  bool sameAsCutoff(StandingRow r) =>
-      r.points == cutoff.points && r.pointsScored == cutoff.pointsScored;
+  bool sameAsCutoff(StandingRow r) => r.isLevelWith(cutoff);
 
   var start = cutoffIndex;
   // Extend left in case the place just above the cutoff (or earlier) is
@@ -202,8 +199,7 @@ List<StandingRow> resolveTiebreakerOrder({
     });
 
   for (var i = 0; i < sorted.length; i++) {
-    bool sameAs(StandingRow other) =>
-        other.points == sorted[i].points && other.pointsScored == sorted[i].pointsScored;
+    bool sameAs(StandingRow other) => other.isLevelWith(sorted[i]);
     sorted[i].tiedWithAnother =
         (i > 0 && sameAs(sorted[i - 1])) || (i < sorted.length - 1 && sameAs(sorted[i + 1]));
   }
@@ -343,8 +339,7 @@ TieChainResult resolveTieChain({
   }
 }
 
-bool _sameStats(StandingRow a, StandingRow b) =>
-    a.points == b.points && a.pointsScored == b.pointsScored;
+bool _sameStats(StandingRow a, StandingRow b) => a.isLevelWith(b);
 
 TieChainResult _resolveTieChainAtCutoff({
   required List<StandingRow> originalCluster,

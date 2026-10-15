@@ -20,6 +20,11 @@ class CricketMatchSummary {
   final bool allOutA;
   final bool allOutB;
   final int quotaBalls;
+
+  /// Each side's own quota when the two innings had different overs (a
+  /// shortened chase). Null = both use [quotaBalls].
+  final int? quotaBallsA;
+  final int? quotaBallsB;
   final int ballsPerOver;
 
   /// False for walkovers/forfeits: points are awarded but the match doesn't
@@ -37,6 +42,8 @@ class CricketMatchSummary {
     this.allOutA = false,
     this.allOutB = false,
     this.quotaBalls = 0,
+    this.quotaBallsA,
+    this.quotaBallsB,
     this.ballsPerOver = 6,
     this.countsForNrr = true,
   });
@@ -71,6 +78,10 @@ class CricketStandingRow {
 }
 
 const _nrrEpsilon = 1e-9;
+
+/// Level on points, wins and net run rate — the three keys of the table.
+bool cricketRowsLevel(CricketStandingRow x, CricketStandingRow y) =>
+    x.points == y.points && x.won == y.won && (x.nrr - y.nrr).abs() <= _nrrEpsilon;
 
 /// Points table: ranked by points, then wins, then net run rate, then
 /// head-to-head (only when exactly two teams are still level). Anything
@@ -113,8 +124,8 @@ List<CricketStandingRow> computeCricketStandings({
     final decided = m.winner != CricketWinner.noResult;
     if (decided && m.countsForNrr && m.ballsPerOver > 0) {
       final bpo = m.ballsPerOver.toDouble();
-      final facedA = (m.allOutA ? m.quotaBalls : m.ballsFacedA) / bpo;
-      final facedB = (m.allOutB ? m.quotaBalls : m.ballsFacedB) / bpo;
+      final facedA = (m.allOutA ? (m.quotaBallsA ?? m.quotaBalls) : m.ballsFacedA) / bpo;
+      final facedB = (m.allOutB ? (m.quotaBallsB ?? m.quotaBalls) : m.ballsFacedB) / bpo;
       a.runsFor += m.runsA;
       a.oversFaced += facedA;
       a.runsAgainst += m.runsB;
