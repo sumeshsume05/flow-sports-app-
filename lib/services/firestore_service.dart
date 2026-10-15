@@ -833,10 +833,12 @@ class FirestoreService {
     String matchId,
     Map<String, dynamic> summary, {
     bool markLive = false,
+    Map<String, dynamic> extra = const {},
   }) async {
     try {
       await _db.collection(matchesCollection).doc(matchId).update({
         ..._summaryUpdate(summary),
+        ...extra,
         if (markLive) 'status': MatchStatus.live.name,
       });
     } catch (e) {

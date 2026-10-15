@@ -115,6 +115,8 @@ class CricketScoringController extends ChangeNotifier {
         events: evs,
         nameA: nameA,
         nameB: nameB,
+        knockout: match!.stage == MatchStage.knockout,
+        tieDecision: match!.tieDecision,
       );
 
   Map<String, dynamic> _summary(MatchScoringState s, List<InningsStart> starts) => summaryFields(
@@ -134,9 +136,33 @@ class CricketScoringController extends ChangeNotifier {
     return _service.saveCricketSummary(matchId, _summary(s, next), markLive: true);
   }
 
+  /// A tied knockout match whose winner the admin picks by hand ([side] 'A' |
+  /// 'B'), or null to take the pick back (a super over is offered again).
+  Future<void> decideTie(String? side) {
+    final m = match!;
+    final s = deriveMatchState(
+      rules: rules,
+      lineupA: m.lineupA,
+      lineupB: m.lineupB,
+      toss: m.toss,
+      starts: starts,
+      events: events,
+      nameA: nameA,
+      nameB: nameB,
+      knockout: m.stage == MatchStage.knockout,
+      tieDecision: side,
+    );
+    return _service.saveCricketSummary(
+      matchId,
+      _summary(s, starts),
+      extra: {'tieDecision': side},
+    );
+  }
+
   /// Adds one event to the innings being scored.
   Future<void> addEvent(CricketEvent e) {
     final cur = state!.current!;
+    if (cur.result.isEnded) return Future.value(); // a late tap after the innings ended
     final logged = LoggedEvent(cur.index, e.copyWith(seq: nextSeq(events)));
     final s = _derive(starts, [...events, logged]);
     return _service.appendCricketBall(matchId, logged, _summary(s, starts));
@@ -145,6 +171,9 @@ class CricketScoringController extends ChangeNotifier {
   /// Seq numbers are assigned here, so callers build events with seq 0.
   Future<void> addBall(CricketEvent Function(int seq) build) {
     final cur = state!.current!;
+    // A late tap (the screen was still drawing the old buttons) must not add a
+    // ball after the over / wickets / target already ended the innings.
+    if (cur.result.isEnded) return Future.value();
     final seq = nextSeq(events);
     final logged = LoggedEvent(cur.index, build(seq));
     final s = _derive(starts, [...events, logged]);
@@ -198,8 +227,8 @@ class CricketScoringController extends ChangeNotifier {
     var slotWrites = <SlotWrite>[];
     if (m.stage == MatchStage.knockout) {
       if (fields['result'] == 'tie') {
-        return 'This knockout match is tied and a knockout needs a winner. Super overs are not built yet — '
-            'if the scoring is wrong, fix the balls; otherwise the tie has to wait for the super-over update.';
+        return 'This knockout match is tied and a knockout needs a winner. Play a super over, or pick '
+            'the winner by hand.';
       }
       final all = await _service.fetchMatches(
         sport: m.sport,

@@ -215,6 +215,10 @@ class _LiveTab extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.lg),
       children: [
         if (scoring) ...[
+          if (cur.isSuperOver) ...[
+            const _Note(icon: Icons.bolt, text: 'Super over — 1 over each, 2 wickets', color: AppColors.live),
+            const SizedBox(height: AppSpacing.md),
+          ],
           _AtTheCrease(result: cur.result, nameOf: data.nameOf),
           const SizedBox(height: AppSpacing.md),
         ] else if (match.status == MatchStatus.upcoming) ...[
@@ -574,7 +578,7 @@ class _InningsCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text('$battingTeam innings',
+                child: Text(inningsTitle(view, battingTeam),
                     style: textTheme.titleMedium, overflow: TextOverflow.ellipsis),
               ),
               Text('${r.scoreText} (${r.oversText} ov)',

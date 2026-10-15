@@ -28,12 +28,19 @@ class SideScore {
   /// This side is batting right now.
   final bool batting;
 
+  /// This side's super-over score ("12/1"), when the match went to one — the
+  /// latest super over, with [superOverBatting] true while it is in progress.
+  final String? superOver;
+  final bool superOverBatting;
+
   const SideScore({
     required this.side,
     required this.name,
     this.score,
     this.overs,
     this.batting = false,
+    this.superOver,
+    this.superOverBatting = false,
   });
 
   bool get hasBatted => score != null;
@@ -44,16 +51,30 @@ class SideScore {
 List<SideScore> sideScores(Match match) {
   final bpo = match.rules?.ballsPerOver ?? 6;
   SideScore forSide(String side, String name) {
-    final i = match.innings.where((r) => r.batting == side).toList();
-    if (i.isEmpty) return SideScore(side: side, name: name);
-    final r = i.first;
-    final inProgress = match.status == MatchStatus.live && !r.ended;
+    // Innings 0 and 1 are the match itself; later ones are super overs.
+    InningsRecord? main;
+    InningsRecord? latestSuper;
+    for (var k = 0; k < match.innings.length; k++) {
+      final r = match.innings[k];
+      if (r.batting != side) continue;
+      if (k < 2) {
+        main ??= r;
+      } else {
+        latestSuper = r;
+      }
+    }
+    final soBatting = latestSuper != null && match.status == MatchStatus.live && !latestSuper.ended;
+    final so = latestSuper == null ? null : '${latestSuper.runs}/${latestSuper.wickets}';
+    if (main == null) return SideScore(side: side, name: name);
+    final inProgress = match.status == MatchStatus.live && !main.ended;
     return SideScore(
       side: side,
       name: name,
-      score: '${r.runs}/${r.wickets}',
-      overs: oversTextFor(r.legalBalls, bpo),
+      score: '${main.runs}/${main.wickets}',
+      overs: oversTextFor(main.legalBalls, bpo),
       batting: inProgress,
+      superOver: so,
+      superOverBatting: soBatting,
     );
   }
 
@@ -61,6 +82,14 @@ List<SideScore> sideScores(Match match) {
     forSide('A', match.teamA.name ?? 'TBD'),
     forSide('B', match.teamB.name ?? 'TBD'),
   ];
+}
+
+/// Heading of one innings: "Blues innings", or "Super over · Blues" (and
+/// "Super over 2 · Blues" when the first one was tied too).
+String inningsTitle(InningsView v, String battingTeam) {
+  if (!v.isSuperOver) return '$battingTeam innings';
+  final n = v.superOverNumber;
+  return 'Super over${n > 1 ? ' $n' : ''} · $battingTeam';
 }
 
 /// "Blues won the toss and chose to bat", or null before the toss.
@@ -162,6 +191,8 @@ CricketViewData buildCricketView({
     events: events,
     nameA: match.teamA.name ?? 'Team A',
     nameB: match.teamB.name ?? 'Team B',
+    knockout: match.stage == MatchStage.knockout,
+    tieDecision: match.tieDecision,
   );
   return CricketViewData(state, nameOf);
 }

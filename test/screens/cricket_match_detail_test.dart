@@ -5,6 +5,7 @@ import 'package:flow_sports_app/core/cricket/auto_play.dart';
 import 'package:flow_sports_app/core/cricket/cricket_rules.dart';
 import 'package:flow_sports_app/core/cricket/cricket_toss.dart';
 import 'package:flow_sports_app/core/cricket/match_display.dart';
+import 'package:flow_sports_app/core/cricket/match_result.dart';
 import 'package:flow_sports_app/core/cricket/match_scoring.dart';
 import 'package:flow_sports_app/models/match.dart';
 import 'package:flow_sports_app/models/player.dart';
@@ -170,6 +171,71 @@ void main() {
         expect(find.textContaining('2 overs'), findsOneWidget);
         expect(find.textContaining('Red1'), findsOneWidget);
         expect(find.text('Ground 1'), findsOneWidget);
+      });
+
+      testWidgets('knockout settled by a super over: both scores, the super over, and its scorecard', (tester) async {
+        await _size(tester, size);
+        final rules = _rules.copyWith(overs: 1);
+        late SimulatedMatch sim;
+        for (var seed = 0;; seed++) {
+          sim = simulateMatch(
+            rules: rules,
+            lineupA: _lineupA,
+            lineupB: _lineupB,
+            battingFirst: 'A',
+            superOver: true,
+            random: Random(seed),
+          );
+          if (sim.starts.length > 2) break;
+        }
+        final state = deriveMatchState(
+          rules: rules,
+          lineupA: _lineupA,
+          lineupB: _lineupB,
+          toss: _toss,
+          starts: sim.starts,
+          events: sim.events,
+          nameA: 'Reds',
+          nameB: 'Blues',
+          knockout: true,
+        );
+        final match = Match(
+          id: 'm1',
+          sport: 'cricket',
+          category: 'boys',
+          season: '2026',
+          stage: MatchStage.knockout,
+          matchNumber: 1,
+          label: 'Semifinal',
+          matchCode: 'KO1',
+          teamA: const TeamRef(teamId: 'tA', name: 'Reds'),
+          teamB: const TeamRef(teamId: 'tB', name: 'Blues'),
+          notifyTopic: '',
+          status: MatchStatus.completed,
+          rules: rules,
+          lineupA: _lineupA,
+          lineupB: _lineupB,
+          toss: _toss,
+          innings: [for (final v in state.innings) inningsRecordOf(v, sim.starts[v.index])],
+          resultText: state.result!.text,
+          result: state.result!.winner == CricketWinner.teamA ? MatchResult.teamA : MatchResult.teamB,
+          scoreA: state.runsFor('A'),
+          scoreB: state.runsFor('B'),
+        );
+        await tester.pumpWidget(_app(_view(match, sim.events)));
+        await tester.pumpAndSettle();
+
+        // The match score is level; the super over is shown under each side.
+        expect(find.textContaining('Super over  '), findsNWidgets(2));
+        expect(find.textContaining('won the super over'), findsOneWidget);
+
+        await _tab(tester, 'Scorecard');
+        expect(find.text('Reds innings'), findsOneWidget);
+        await tester.scrollUntilVisible(find.text('Super over · Blues'), 300,
+            scrollable: find.byType(Scrollable).last);
+        await tester.scrollUntilVisible(find.text('Super over · Reds'), 300,
+            scrollable: find.byType(Scrollable).last);
+        expect(tester.takeException(), isNull);
       });
 
       testWidgets('live match: batters, bowler, this over and commentary', (tester) async {

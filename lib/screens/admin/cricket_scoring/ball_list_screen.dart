@@ -136,7 +136,7 @@ class _CricketBallListScreenState extends State<CricketBallListScreen> {
                   child: SegmentedButton<int>(
                     segments: [
                       for (final i in state.innings)
-                        ButtonSegment(value: i.index, label: Text('${c.teamName(i.battingSide)} innings')),
+                        ButtonSegment(value: i.index, label: Text(inningsTitle(i, c.teamName(i.battingSide)))),
                     ],
                     selected: {view.index},
                     onSelectionChanged: (s) => setState(() => _innings = s.first),

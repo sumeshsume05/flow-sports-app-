@@ -106,6 +106,7 @@ List<CricketEvent> simulateInnings({
   required List<String> bowling,
   required InningsStart start,
   int? target,
+  int? maxWickets,
   int firstSeq = 1,
   Random? random,
 }) {
@@ -117,6 +118,7 @@ List<CricketEvent> simulateInnings({
     nonStrikerId: start.nonStrikerId,
     target: target,
     maxOvers: start.maxOvers,
+    maxWickets: maxWickets,
   );
   final events = <CricketEvent>[];
   for (var guard = 0; guard < 2000; guard++) {
@@ -134,12 +136,16 @@ class SimulatedMatch {
   const SimulatedMatch(this.starts, this.events);
 }
 
-/// A full two-innings match. [battingFirst] is 'A' or 'B'.
+/// A full two-innings match. [battingFirst] is 'A' or 'B'. With [superOver],
+/// a tied match carries on with super overs until one side wins (at most
+/// [maxSuperOvers], so a pathological run can't loop for ever).
 SimulatedMatch simulateMatch({
   required CricketRules rules,
   required List<String> lineupA,
   required List<String> lineupB,
   required String battingFirst,
+  bool superOver = false,
+  int maxSuperOvers = 5,
   Random? random,
 }) {
   final rnd = random ?? Random();
@@ -169,11 +175,83 @@ SimulatedMatch simulateMatch({
     firstSeq: first.length + 1,
     random: rnd,
   );
-  return SimulatedMatch(
-    [start1, start2],
-    [
-      for (final e in first) LoggedEvent(0, e),
-      for (final e in second) LoggedEvent(1, e),
-    ],
-  );
+  final starts = [start1, start2];
+  final events = [
+    for (final e in first) LoggedEvent(0, e),
+    for (final e in second) LoggedEvent(1, e),
+  ];
+
+  final secondRuns = replayInnings(
+    rules,
+    InningsSetup(
+      battingLineup: secondBatting,
+      bowlingLineup: firstBatting,
+      strikerId: start2.strikerId,
+      nonStrikerId: start2.nonStrikerId,
+      target: firstRuns + 1,
+    ),
+    second,
+  ).runs;
+  if (superOver && secondRuns == firstRuns) {
+    var seq = first.length + second.length + 1;
+    for (var n = 0; n < maxSuperOvers; n++) {
+      final opener = n.isEven ? secondBatting : firstBatting;
+      final chaser = n.isEven ? firstBatting : secondBatting;
+      final s1 = InningsStart(strikerId: opener[0], nonStrikerId: opener[1]);
+      final s2 = InningsStart(strikerId: chaser[0], nonStrikerId: chaser[1]);
+      final a = simulateInnings(
+        rules: rules,
+        batting: opener,
+        bowling: chaser,
+        start: InningsStart(strikerId: s1.strikerId, nonStrikerId: s1.nonStrikerId, maxOvers: superOverOvers),
+        maxWickets: superOverWickets,
+        firstSeq: seq,
+        random: rnd,
+      );
+      seq += a.length;
+      final aRuns = replayInnings(
+        rules,
+        InningsSetup(
+          battingLineup: opener,
+          bowlingLineup: chaser,
+          strikerId: s1.strikerId,
+          nonStrikerId: s1.nonStrikerId,
+          maxOvers: superOverOvers,
+          maxWickets: superOverWickets,
+        ),
+        a,
+      ).runs;
+      final b = simulateInnings(
+        rules: rules,
+        batting: chaser,
+        bowling: opener,
+        start: InningsStart(strikerId: s2.strikerId, nonStrikerId: s2.nonStrikerId, maxOvers: superOverOvers),
+        target: aRuns + 1,
+        maxWickets: superOverWickets,
+        firstSeq: seq,
+        random: rnd,
+      );
+      seq += b.length;
+      final bRuns = replayInnings(
+        rules,
+        InningsSetup(
+          battingLineup: chaser,
+          bowlingLineup: opener,
+          strikerId: s2.strikerId,
+          nonStrikerId: s2.nonStrikerId,
+          target: aRuns + 1,
+          maxOvers: superOverOvers,
+          maxWickets: superOverWickets,
+        ),
+        b,
+      ).runs;
+      starts..add(s1)..add(s2);
+      final idx = starts.length - 2;
+      events
+        ..addAll([for (final e in a) LoggedEvent(idx, e)])
+        ..addAll([for (final e in b) LoggedEvent(idx + 1, e)]);
+      if (aRuns != bRuns) break;
+    }
+  }
+  return SimulatedMatch(starts, events);
 }

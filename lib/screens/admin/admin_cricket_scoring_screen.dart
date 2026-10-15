@@ -5,12 +5,14 @@ import 'package:go_router/go_router.dart';
 import '../../core/cricket/commentary_text.dart';
 import '../../core/cricket/cricket_event.dart';
 import '../../core/cricket/innings_replay.dart';
+import '../../core/cricket/match_display.dart';
 import '../../core/cricket/match_result.dart';
 import '../../core/cricket/match_scoring.dart';
 import '../../core/design/app_colors.dart';
 import '../../core/design/app_radius.dart';
 import '../../core/design/app_spacing.dart';
 import '../../models/match.dart';
+import '../../widgets/confirm_dialog.dart';
 import 'cricket_scoring/ball_list_screen.dart';
 import 'cricket_scoring/scoring_controller.dart';
 import 'cricket_scoring/wicket_sheet.dart';
@@ -197,6 +199,39 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
     if (ok == true) _fire(_c.addEvent(const CricketEvent.endInnings(0)));
   }
 
+  /// "Blues: 45/2 (4.3 ov)", with "Super over · " in front for a super over.
+  String _inningsLine(InningsView v) {
+    final who = _c.teamName(v.battingSide);
+    final title = v.isSuperOver ? '${inningsTitle(v, who)}: ' : '$who: ';
+    return '$title${v.result.scoreText} (${v.result.oversText} ov)';
+  }
+
+  Future<void> _decideTie(String side) async {
+    final name = _c.teamName(side);
+    final ok = await confirmAction(
+      context,
+      title: 'Give the win to $name?',
+      message: 'The match was tied. Use this only when a super over can\'t be played.',
+      bullets: [
+        '$name go through to the next round.',
+        'The result will say it was decided by the admin.',
+        'You can take this back until you save the result.',
+      ],
+      confirmLabel: 'Give $name the win',
+    );
+    if (ok) _fire(_c.decideTie(side));
+  }
+
+  Future<void> _takeBackDecision() async {
+    final ok = await confirmAction(
+      context,
+      title: 'Take back the pick?',
+      message: 'The match goes back to level scores, so a super over can be played again.',
+      confirmLabel: 'Take it back',
+    );
+    if (ok) _fire(_c.decideTie(null));
+  }
+
   Future<void> _saveResult() async {
     final state = _c.state;
     final match = _c.match;
@@ -206,20 +241,21 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Save this result?'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(state.result!.text, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-              const SizedBox(height: AppSpacing.sm),
-              for (final v in state.innings)
-                Text('${_c.teamName(v.battingSide)}: ${v.result.scoreText} (${v.result.oversText} ov)'),
-              const SizedBox(height: AppSpacing.sm),
-              Text(knockout
-                  ? 'The winner moves on to the next round of the bracket. Viewers see the result at once.'
-                  : 'This counts in the points table. Viewers see the result at once.'),
-              const Text('You can still reopen the match to fix a ball.'),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(state.result!.text, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                const SizedBox(height: AppSpacing.sm),
+                for (final v in state.innings) Text(_inningsLine(v)),
+                const SizedBox(height: AppSpacing.sm),
+                Text(knockout
+                    ? 'The winner moves on to the next round of the bracket. Viewers see the result at once.'
+                    : 'This counts in the points table. Viewers see the result at once.'),
+                const Text('You can still reopen the match to fix a ball.'),
+              ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
@@ -320,7 +356,7 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
           action: FilledButton(onPressed: () => context.pop(), child: const Text('Back to match setup')),
         );
       case ScoringPhase.awaitingInnings:
-        return _StartInnings(controller: _c, state: state, onReview: _openBalls);
+        return _StartInnings(controller: _c, state: state, onReview: _openBalls, onDecide: _decideTie);
       case ScoringPhase.scoring:
         return _scoring(context, state);
       case ScoringPhase.finished:
@@ -374,6 +410,14 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (v.isSuperOver)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text(
+                            'SUPER OVER${v.superOverNumber > 1 ? ' ${v.superOverNumber}' : ''} · 1 over · 2 wickets',
+                            style: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800, color: AppColors.live),
+                          ),
+                        ),
                       Text(batName, style: textTheme.titleMedium),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -708,10 +752,7 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
                 for (final v in state.innings)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '${_c.teamName(v.battingSide)}: ${v.result.scoreText} (${v.result.oversText} ov)',
-                      style: textTheme.bodyLarge,
-                    ),
+                    child: Text(_inningsLine(v), style: textTheme.bodyLarge),
                   ),
                 if (res?.winner == CricketWinner.tie)
                   const Padding(
@@ -723,6 +764,20 @@ class _AdminCricketScoringScreenState extends State<AdminCricketScoringScreen> {
           ),
         ),
         if (state.hasBlockingFlags && !saved) _ReviewBanner(count: state.blockingFlags.length, onTap: _openBalls),
+        if (!saved && res?.winner == CricketWinner.tie && _c.match?.stage == MatchStage.knockout)
+          _TieDecision(
+            nameA: _c.nameA,
+            nameB: _c.nameB,
+            intro: 'A knockout match needs a winner. Super overs are switched off in this match\'s rules, '
+                'so pick the winner by hand.',
+            onPick: _decideTie,
+          ),
+        if (!saved && state.decidedByAdmin)
+          TextButton.icon(
+            icon: const Icon(Icons.undo),
+            label: const Text('Take back my pick'),
+            onPressed: _takeBackDecision,
+          ),
         if (!saved)
           FilledButton.icon(
             icon: const Icon(Icons.check),
@@ -780,6 +835,53 @@ class _Notice extends StatelessWidget {
   }
 }
 
+/// "Pick the winner by hand" — for a tied knockout match when a super over
+/// can't or won't be played.
+class _TieDecision extends StatelessWidget {
+  final String nameA;
+  final String nameB;
+  final String intro;
+  final void Function(String side) onPick;
+
+  const _TieDecision({required this.nameA, required this.nameB, required this.intro, required this.onPick});
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Pick the winner by hand', style: textTheme.titleSmall),
+            const SizedBox(height: AppSpacing.xs),
+            Text(intro, style: textTheme.bodySmall),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => onPick('A'),
+                    child: Text(nameA, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => onPick('B'),
+                    child: Text(nameB, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ReviewBanner extends StatelessWidget {
   final int count;
   final VoidCallback onTap;
@@ -821,8 +923,14 @@ class _StartInnings extends StatefulWidget {
   final CricketScoringController controller;
   final MatchScoringState state;
   final VoidCallback onReview;
+  final void Function(String side) onDecide;
 
-  const _StartInnings({required this.controller, required this.state, required this.onReview});
+  const _StartInnings({
+    required this.controller,
+    required this.state,
+    required this.onReview,
+    required this.onDecide,
+  });
 
   @override
   State<_StartInnings> createState() => _StartInningsState();
@@ -840,11 +948,14 @@ class _StartInningsState extends State<_StartInnings> {
     final textTheme = Theme.of(context).textTheme;
     final index = s.nextInningsIndex;
     final first = c.match!.toss!.battingFirstSide;
-    final side = index.isEven ? first : otherSide(first);
+    final side = battingSideForInnings(first, index);
+    final superOver = index >= 2;
     final lineup = side == 'A' ? c.match!.lineupA : c.match!.lineupB;
     _striker ??= lineup.isNotEmpty ? lineup[0] : null;
     _nonStriker ??= lineup.length > 1 ? lineup[1] : null;
-    final target = index == 1 ? s.innings.first.result.runs + 1 : null;
+    final target = index.isOdd ? s.innings.last.result.runs + 1 : null;
+    final soNumber = superOver ? (index - 2) ~/ 2 + 1 : 0;
+    final soName = soNumber > 1 ? 'super over $soNumber' : 'the super over';
     final rules = c.rules;
     final toss = c.match!.toss!;
 
@@ -862,6 +973,53 @@ class _StartInningsState extends State<_StartInnings> {
       padding: const EdgeInsets.all(AppSpacing.md),
       children: [
         if (s.hasBlockingFlags) _ReviewBanner(count: s.blockingFlags.length, onTap: widget.onReview),
+        if (superOver && index.isEven) ...[
+          Card(
+            color: AppColors.live.withValues(alpha: 0.12),
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(index == 2 ? 'Match tied' : 'Super over tied too', style: textTheme.titleMedium),
+                  const SizedBox(height: AppSpacing.xs),
+                  for (final v in s.innings.skip(index == 2 ? 0 : index - 2))
+                    Text('${c.teamName(v.battingSide)}: ${v.result.scoreText} (${v.result.oversText} ov)',
+                        style: textTheme.titleSmall),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text('${c.teamName(side)} bat first in ${index == 2 ? 'the super over' : 'the next super over'}: '
+                      '1 over each, 2 wickets. If it is tied again, another one is played.'),
+                ],
+              ),
+            ),
+          ),
+          _TieDecision(
+            nameA: c.nameA,
+            nameB: c.nameB,
+            intro: 'Can\'t play a super over? Pick the winner by hand instead.',
+            onPick: widget.onDecide,
+          ),
+        ],
+        if (superOver && index.isOdd)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Super over — innings break', style: textTheme.titleMedium),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '${c.teamName(s.innings.last.battingSide)}: ${s.innings.last.result.scoreText} '
+                    '(${s.innings.last.result.oversText} ov)',
+                    style: textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text('${c.teamName(side)} need $target runs in 1 over.'),
+                ],
+              ),
+            ),
+          ),
         if (index == 1)
           Card(
             child: Padding(
@@ -887,7 +1045,13 @@ class _StartInningsState extends State<_StartInnings> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(index == 0 ? 'Start the match' : 'Start the second innings', style: textTheme.titleMedium),
+                Text(
+                    index == 0
+                        ? 'Start the match'
+                        : superOver
+                            ? 'Start ${index.isEven ? soName : 'the chase in $soName'}'
+                            : 'Start the second innings',
+                    style: textTheme.titleMedium),
                 const SizedBox(height: AppSpacing.xs),
                 if (index == 0)
                   Text(
@@ -907,7 +1071,7 @@ class _StartInningsState extends State<_StartInnings> {
                   width: double.infinity,
                   child: FilledButton.icon(
                     icon: const Icon(Icons.sports_cricket),
-                    label: Text(_starting ? 'Starting…' : 'Start innings'),
+                    label: Text(_starting ? 'Starting…' : (superOver ? 'Start super over innings' : 'Start innings')),
                     onPressed: _starting || _striker == null || _nonStriker == null || _striker == _nonStriker
                         ? null
                         : () async {

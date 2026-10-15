@@ -167,6 +167,21 @@ void main() {
       c.dispose();
     });
 
+    test('a late tap after the over is finished adds nothing (no "ball not counted" later)', () async {
+      final c = await _open();
+      await _startFirst(c);
+      for (var i = 0; i < 6; i++) {
+        await _add(c, (s) => _bat(s, 6, boundary: Boundary.six));
+      }
+      expect(c.state!.current!.result.isEnded, isTrue);
+      await _add(c, (s) => _bat(s, 6, boundary: Boundary.six)); // the stale 7th tap
+      await c.addEvent(const CricketEvent.swapStrike(0));
+      await pumpEventQueue();
+      expect((await _balls()).length, 6);
+      expect(c.state!.hasBlockingFlags, isFalse);
+      c.dispose();
+    });
+
     test('a wicket brings in the next batter and is stored as inputs only', () async {
       final c = await _open();
       await _startFirst(c);
@@ -453,13 +468,71 @@ void main() {
       c.dispose();
     });
 
-    test('a tied knockout is refused with a clear reason and nothing is advanced', () async {
+    test('a tied knockout is not finished: it waits for a super over and nothing is advanced', () async {
       await seedBracket();
       final c = await playKo(first: 1, second: 1);
-      final msg = await c.finish();
-      expect(msg, contains('tied'));
+      expect(c.state!.phase, ScoringPhase.awaitingInnings);
+      expect(c.state!.superOverNext, isTrue);
+      expect((await _match())['summaryText'], 'Match tied · super over next');
+      expect(await c.finish(), contains('isn\'t finished'));
       expect((await _match())['status'], 'live');
       expect((await _match('final'))['teamA']['teamId'], isNull);
+      c.dispose();
+    });
+
+    test('a super over decides it: the winner moves on, the match score is unchanged', () async {
+      await seedBracket();
+      final c = await playKo(first: 1, second: 1);
+      // Blues (batted second) open the super over: 1 over, 2 wickets.
+      await c.startInnings(_open1);
+      await pumpEventQueue();
+      expect(c.state!.current!.isSuperOver, isTrue);
+      expect(c.state!.current!.battingSide, 'B');
+      for (var i = 0; i < 6; i++) {
+        await _add(c, (s) => _bat(s, i == 0 ? 4 : 0, bowler: 'a1', boundary: i == 0 ? Boundary.four : Boundary.none));
+      }
+      expect(c.state!.nextInningsIndex, 3);
+      await c.startInnings(_open0);
+      await pumpEventQueue();
+      await _add(c, (s) => _bat(s, 6, bowler: 'b1', boundary: Boundary.six)); // Reds chase 5, hit 6
+      expect(c.state!.phase, ScoringPhase.finished);
+      expect(c.state!.result!.text, contains('Reds won the super over'));
+
+      final doc = await _match();
+      expect(doc['scoreA'], 6);
+      expect(doc['scoreB'], 6);
+      expect((doc['innings'] as List).length, 4);
+      expect(await c.finish(), isNull);
+      final done = await _match();
+      expect(done['result'], 'teamA');
+      expect(done['status'], 'completed');
+      expect((await _match('final'))['teamA']['teamId'], 'tA');
+      c.dispose();
+    });
+
+    test('the admin can pick the winner of a tied knockout by hand, and take the pick back', () async {
+      await seedBracket();
+      final c = await playKo(first: 1, second: 1);
+      await c.decideTie('B');
+      await pumpEventQueue();
+      expect(c.state!.phase, ScoringPhase.finished);
+      expect(c.state!.decidedByAdmin, isTrue);
+      expect((await _match())['tieDecision'], 'B');
+      expect((await _match())['summaryText'], contains('given the win'));
+
+      expect(await c.finish(), isNull);
+      final done = await _match();
+      expect(done['result'], 'teamB');
+      expect(done['resultText'], contains('decided by the admin'));
+      expect((await _match('final'))['teamA']['teamId'], 'tB'); // Blues take the slot
+
+      // Reopen, take the pick back: a super over is on offer again.
+      expect(await c.reopen(), isNull);
+      await pumpEventQueue();
+      await c.decideTie(null);
+      await pumpEventQueue();
+      expect(c.state!.superOverNext, isTrue);
+      expect((await _match())['tieDecision'], isNull);
       c.dispose();
     });
 
@@ -526,6 +599,31 @@ void main() {
       // Already played → nothing more to do.
       final again = await lab.playCricketStage(Sport.cricket, '2026', stage: 'league', random: Random(6));
       expect(again.played, 0);
+    });
+
+    test('a knockout played with ties goes to a super over, and the stored balls replay to the same result',
+        () async {
+      await db.collection('teams').doc('tA').update({'category': Category.test});
+      await db.collection('teams').doc('tB').update({'category': Category.test});
+      await db.collection('matches').doc('m1').set(
+          _matchDoc(stage: 'knockout', code: 'KOF', category: Category.test, ready: false));
+      final lab = TestLabService(firestore: db, firestoreService: service);
+      final r = await lab.playCricketKnockout(Sport.cricket, '2026', random: Random(3), forceTie: true);
+      expect(r.played, 1);
+      expect(r.note, 'The whole knockout is played.');
+
+      final m = await _match();
+      expect(m['status'], 'completed');
+      expect(m['result'], anyOf('teamA', 'teamB'));
+      expect((m['innings'] as List).length, greaterThan(2), reason: 'a super over was played');
+      expect(m['scoreA'], m['scoreB'], reason: 'the match itself ended level');
+      expect(m['resultText'], contains('super over'));
+
+      final c = await _open();
+      expect(c.state!.phase, ScoringPhase.finished);
+      expect(c.state!.hasBlockingFlags, isFalse);
+      expect(c.state!.result!.text, m['resultText']);
+      c.dispose();
     });
 
     test('teams with fewer than 2 players are skipped with a reason', () async {
